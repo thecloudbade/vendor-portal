@@ -64,3 +64,73 @@
 :focus-visible {
   @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
 }
+
+/* Auth / form layout */
+.auth-page {
+  @apply min-h-screen flex flex-col lg:flex-row;
+}
+
+.auth-panel-left {
+  @apply hidden lg:flex lg:w-[48%] xl:w-1/2 flex-col justify-between relative overflow-hidden;
+  background: linear-gradient(165deg, hsl(var(--primary)) 0%, hsl(221 83% 42%) 50%, hsl(224 76% 38%) 100%);
+}
+
+.auth-panel-left::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.06) 0%, transparent 45%);
+  pointer-events: none;
+}
+
+.auth-panel-right {
+  @apply w-full lg:w-[52%] xl:w-1/2 flex items-center justify-center p-6 sm:p-8 md:p-10;
+  background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(210 20% 96%) 100%);
+}
+
+.form-card {
+  @apply w-full max-w-[420px] rounded-2xl border border-border bg-card p-8 sm:p-10 shadow-elevated;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.04), 0 0 0 1px rgb(0 0 0 / 0.02);
+}
+
+.form-card-header {
+  @apply flex items-center gap-4 mb-8;
+}
+
+.form-card-icon {
+  @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary;
+}
+
+.form-card-title {
+  @apply text-xl font-semibold tracking-tight text-foreground;
+}
+
+.form-card-desc {
+  @apply text-sm text-muted-foreground mt-0.5;
+}
+
+.form-group {
+  @apply space-y-2;
+}
+
+.form-label {
+  @apply text-sm font-medium text-foreground;
+}
+
+.form-input {
+  @apply h-11 w-full rounded-xl border border-input bg-muted/30 px-4 text-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:border-primary disabled:opacity-50;
+}
+
+.form-input-error {
+  @apply border-destructive focus-visible:ring-destructive;
+}
+
+.form-error {
+  @apply text-sm text-destructive;
+}
+
+.form-submit {
+  @apply mt-6 w-full h-11 rounded-xl font-medium transition-all hover:opacity-95 active:scale-[0.99];
+}

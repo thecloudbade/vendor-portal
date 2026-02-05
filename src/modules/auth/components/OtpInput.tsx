@@ -77,11 +77,11 @@ export function OtpInput({
           onPaste={i === 0 ? handlePaste : undefined}
           disabled={disabled}
           className={cn(
-            'h-12 w-11 rounded-lg border bg-muted/30 text-center text-lg font-semibold transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+            'h-12 w-11 rounded-xl border-2 bg-muted/30 text-center text-lg font-semibold transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-offset-2',
             error
-              ? 'border-destructive focus:ring-destructive'
-              : 'border-input focus:border-primary',
+              ? 'border-destructive focus:ring-destructive focus:border-destructive'
+              : 'border-input focus:ring-ring focus:border-primary',
             disabled && 'cursor-not-allowed opacity-50'
           )}
           aria-label={`Digit ${i + 1} of ${DIGITS}`}

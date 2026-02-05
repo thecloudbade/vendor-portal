@@ -8,16 +8,9 @@ import { ROUTES } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { Mail, Building2, Package } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const schema = z.object({
   email: z.string().email('Invalid email').toLowerCase().trim(),
@@ -67,88 +60,104 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left: branding / illustration area */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary p-10 text-primary-foreground">
-        <div>
+    <div className="auth-page">
+      {/* Left: branding */}
+      <div className="auth-panel-left p-10 xl:p-14 text-white">
+        <div className="relative z-10">
           <h2 className="text-xl font-semibold tracking-tight">Vendor Portal</h2>
-          <p className="text-primary-foreground/80 text-sm mt-1">Procurement & document exchange</p>
+          <p className="text-white/80 text-sm mt-1">Procurement & document exchange</p>
         </div>
-        <div className="space-y-6">
-          <p className="text-lg font-medium max-w-sm">
+        <div className="relative z-10 space-y-6 max-w-sm">
+          <p className="text-lg font-medium text-white/95 leading-relaxed">
             Sign in with your work email. We’ll send you a one-time code—no password needed.
           </p>
-          <div className="flex gap-6 text-sm text-primary-foreground/80">
+          <div className="flex flex-wrap gap-4 text-sm text-white/80">
             <span className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
+              <Building2 className="h-5 w-5 shrink-0" />
               Organization
             </span>
             <span className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
+              <Package className="h-5 w-5 shrink-0" />
               Vendor
             </span>
           </div>
         </div>
-        <p className="text-xs text-primary-foreground/60">Secure access for buyers and suppliers.</p>
+        <p className="relative z-10 text-xs text-white/60">Secure access for buyers and suppliers.</p>
       </div>
 
       {/* Right: form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-10 bg-background">
-        <div className="w-full max-w-[400px]">
+      <div className="auth-panel-right">
+        <div className="w-full">
           <div className="lg:hidden mb-8">
             <h2 className="text-xl font-semibold text-foreground">Vendor Portal</h2>
             <p className="text-muted-foreground text-sm mt-1">Sign in to continue</p>
           </div>
-          <div className="rounded-xl border border-border bg-card p-8 shadow-card">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Mail className="h-5 w-5" />
+          <div className="form-card">
+            <div className="form-card-header">
+              <div className="form-card-icon">
+                <Mail className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-foreground">Sign in</h1>
-                <p className="text-sm text-muted-foreground">Enter your email to receive a code</p>
+                <h1 className="form-card-title">Sign in</h1>
+                <p className="form-card-desc">Enter your email to receive a one-time code</p>
               </div>
             </div>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="userType" className="text-foreground font-medium">I am a</Label>
-                <Select
-                  value={userType}
-                  onValueChange={(v) => setValue('userType', v as 'org' | 'vendor')}
-                >
-                  <SelectTrigger id="userType" className="h-11 bg-muted/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="org">Organization (Buyer)</SelectItem>
-                    <SelectItem value="vendor">Vendor</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="form-group">
+                <label className="form-label block">I am a</label>
+                <div className="grid grid-cols-2 gap-3 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setValue('userType', 'org')}
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-medium transition-all',
+                      userType === 'org'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/50 hover:bg-muted/50'
+                    )}
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Organization
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setValue('userType', 'vendor')}
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-medium transition-all',
+                      userType === 'vendor'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/50 hover:bg-muted/50'
+                    )}
+                  >
+                    <Package className="h-4 w-4" />
+                    Vendor
+                  </button>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-foreground font-medium">Email</Label>
+              <div className="form-group">
+                <label htmlFor="email" className="form-label block">Email</label>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="email"
                   placeholder="you@company.com"
-                  className="h-11 bg-muted/50"
+                  className={cn('form-input h-11', errors.email && 'form-input-error')}
                   {...register('email')}
                 />
                 {errors.email && (
-                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                  <p className="form-error mt-1">{errors.email.message}</p>
                 )}
               </div>
               <Button
                 type="submit"
-                className="w-full h-11 font-medium"
+                className="form-submit"
                 disabled={isSubmitting || cooldown > 0}
               >
-                {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Send one-time code'}
+                {isSubmitting ? 'Sending…' : cooldown > 0 ? `Resend code in ${cooldown}s` : 'Send one-time code'}
               </Button>
             </form>
             {cooldown > 0 && (
-              <p className="text-xs text-muted-foreground text-center mt-5 pt-5 border-t border-border">
+              <p className="text-xs text-muted-foreground text-center mt-6 pt-5 border-t border-border">
                 Check your inbox for the one-time code. It may take a minute to arrive.
               </p>
             )}

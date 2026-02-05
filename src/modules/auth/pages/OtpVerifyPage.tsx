@@ -72,16 +72,16 @@ export function OtpVerifyPage() {
   if (!email) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 sm:p-10 bg-background">
-      <div className="w-full max-w-[400px]">
-        <div className="rounded-xl border border-border bg-card p-8 shadow-card">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Mail className="h-5 w-5" />
+    <div className="min-h-screen flex items-center justify-center p-6 sm:p-8 md:p-10 auth-panel-right">
+      <div className="w-full max-w-[420px]">
+        <div className="form-card">
+          <div className="form-card-header">
+            <div className="form-card-icon">
+              <Mail className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-foreground">Check your email</h1>
-              <p className="text-sm text-muted-foreground">
+              <h1 className="form-card-title">Check your email</h1>
+              <p className="form-card-desc">
                 We sent a 6-digit code to <strong className="text-foreground font-medium">{email}</strong>
               </p>
             </div>
@@ -95,20 +95,20 @@ export function OtpVerifyPage() {
                 disabled={isSubmitting}
               />
               {errors.otp && (
-                <p className="text-sm text-destructive text-center mt-3">{errors.otp.message}</p>
+                <p className="form-error text-center mt-3">{errors.otp.message}</p>
               )}
             </div>
             <Button
               type="submit"
-              className="w-full h-11 font-medium"
+              className="form-submit w-full"
               disabled={isSubmitting || otpValue.length !== 6}
             >
-              Verify and continue
+              {isSubmitting ? 'Verifying…' : 'Verify and continue'}
             </Button>
           </form>
           <Button
             variant="ghost"
-            className="w-full mt-5 text-muted-foreground hover:text-foreground"
+            className="w-full mt-6 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
             onClick={() => navigate(`${ROUTES.LOGIN}?returnUrl=${encodeURIComponent(searchParams.get('returnUrl') ?? '')}`)}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />

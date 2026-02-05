@@ -60,59 +60,63 @@ function SuspenseFallback() {
   );
 }
 
-const router = createBrowserRouter([
-  {
-    path: '/',
-    element: <Outlet />,
-    errorElement: <ErrorLayout />,
-    children: [
-      {
-        element: <AuthLayout />,
-        children: [
-          { path: 'auth/login', element: <LoginPage /> },
-          { path: 'auth/verify-otp', element: <OtpVerifyPage /> },
-        ],
-      },
-      {
-        path: 'org',
-        element: (
-          <ProtectedRoute allowedUserType="org">
-            <OrgLayout />
-          </ProtectedRoute>
-        ),
-        children: [
-          { index: true, element: <Navigate to={ROUTES.ORG.DASHBOARD} replace /> },
-          { path: 'dashboard', element: <Suspense fallback={<SuspenseFallback />}><OrgDashboard /></Suspense> },
-          { path: 'vendors', element: <Suspense fallback={<SuspenseFallback />}><VendorsPage /></Suspense> },
-          { path: 'vendors/:vendorId', element: <Suspense fallback={<SuspenseFallback />}><VendorDetailsPage /></Suspense> },
-          { path: 'pos', element: <Suspense fallback={<SuspenseFallback />}><OrgPOListPage /></Suspense> },
-          { path: 'pos/:poId', element: <Suspense fallback={<SuspenseFallback />}><OrgPODetailsPage /></Suspense> },
-          { path: 'settings', element: <Suspense fallback={<SuspenseFallback />}><SettingsPage /></Suspense> },
-          { path: 'audit', element: <Suspense fallback={<SuspenseFallback />}><AuditPage /></Suspense> },
-        ],
-      },
-      {
-        path: 'vendor',
-        element: (
-          <ProtectedRoute allowedUserType="vendor">
-            <VendorLayout />
-          </ProtectedRoute>
-        ),
-        children: [
-          { index: true, element: <Navigate to={ROUTES.VENDOR.DASHBOARD} replace /> },
-          { path: 'dashboard', element: <Suspense fallback={<SuspenseFallback />}><VendorDashboard /></Suspense> },
-          { path: 'po-search', element: <Suspense fallback={<SuspenseFallback />}><POSearchPage /></Suspense> },
-          { path: 'po/:poId', element: <Suspense fallback={<SuspenseFallback />}><VendorPODetailsPage /></Suspense> },
-          { path: 'upload/:poId', element: <Suspense fallback={<SuspenseFallback />}><UploadPage /></Suspense> },
-          { path: 'uploads', element: <Suspense fallback={<SuspenseFallback />}><UploadHistoryPage /></Suspense> },
-        ],
-      },
-      { path: 'auth', element: <Navigate to={ROUTES.LOGIN} replace /> },
-      { path: '*', element: <Navigate to="/" replace /> },
+const router = createBrowserRouter(
+  [
+    {
+      path: '/',
+      element: <Outlet />,
+      errorElement: <ErrorLayout />,
+      children: [
+        { index: true, element: <Navigate to={ROUTES.LOGIN} replace /> },
+        {
+          element: <AuthLayout />,
+          children: [
+            { path: 'auth/login', element: <LoginPage /> },
+            { path: 'auth/verify-otp', element: <OtpVerifyPage /> },
+          ],
+        },
+        {
+          path: 'org',
+          element: (
+            <ProtectedRoute allowedUserType="org">
+              <OrgLayout />
+            </ProtectedRoute>
+          ),
+          children: [
+            { index: true, element: <Navigate to={ROUTES.ORG.DASHBOARD} replace /> },
+            { path: 'dashboard', element: <Suspense fallback={<SuspenseFallback />}><OrgDashboard /></Suspense> },
+            { path: 'vendors', element: <Suspense fallback={<SuspenseFallback />}><VendorsPage /></Suspense> },
+            { path: 'vendors/:vendorId', element: <Suspense fallback={<SuspenseFallback />}><VendorDetailsPage /></Suspense> },
+            { path: 'pos', element: <Suspense fallback={<SuspenseFallback />}><OrgPOListPage /></Suspense> },
+            { path: 'pos/:poId', element: <Suspense fallback={<SuspenseFallback />}><OrgPODetailsPage /></Suspense> },
+            { path: 'settings', element: <Suspense fallback={<SuspenseFallback />}><SettingsPage /></Suspense> },
+            { path: 'audit', element: <Suspense fallback={<SuspenseFallback />}><AuditPage /></Suspense> },
+          ],
+        },
+        {
+          path: 'vendor',
+          element: (
+            <ProtectedRoute allowedUserType="vendor">
+              <VendorLayout />
+            </ProtectedRoute>
+          ),
+          children: [
+            { index: true, element: <Navigate to={ROUTES.VENDOR.DASHBOARD} replace /> },
+            { path: 'dashboard', element: <Suspense fallback={<SuspenseFallback />}><VendorDashboard /></Suspense> },
+            { path: 'po-search', element: <Suspense fallback={<SuspenseFallback />}><POSearchPage /></Suspense> },
+            { path: 'po/:poId', element: <Suspense fallback={<SuspenseFallback />}><VendorPODetailsPage /></Suspense> },
+            { path: 'upload/:poId', element: <Suspense fallback={<SuspenseFallback />}><UploadPage /></Suspense> },
+            { path: 'uploads', element: <Suspense fallback={<SuspenseFallback />}><UploadHistoryPage /></Suspense> },
+          ],
+        },
+        { path: 'auth', element: <Navigate to={ROUTES.LOGIN} replace /> },
+        { path: '*', element: <Navigate to={ROUTES.LOGIN} replace /> },
     ],
   },
-]);
+  ],
+  { future: { v7_startTransition: true } }
+);
 
 export function AppRouter() {
-  return <RouterProvider router={router} />;
+  return <RouterProvider router={router} future={{ v7_startTransition: true }} />;
 }
