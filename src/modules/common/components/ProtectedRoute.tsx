@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
-import { ROUTES, ORG_BASE, VENDOR_BASE } from '../constants/routes';
+import { ROUTES, ORG_BASE, VENDOR_BASE, PLATFORM_BASE } from '../constants/routes';
 import type { UserType } from '../types/api';
 
 interface ProtectedRouteProps {
@@ -30,7 +30,12 @@ export function ProtectedRoute({ children, allowedUserType }: ProtectedRouteProp
   }
 
   if (user.userType !== allowedUserType) {
-    const base = user.userType === 'org' ? ORG_BASE : VENDOR_BASE;
+    const base =
+      user.userType === 'platform'
+        ? PLATFORM_BASE
+        : user.userType === 'org'
+          ? ORG_BASE
+          : VENDOR_BASE;
     return <Navigate to={base} replace />;
   }
 

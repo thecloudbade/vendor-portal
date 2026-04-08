@@ -60,6 +60,22 @@
   }
 }
 
+/* SaaS app surfaces inside dashboard shell */
+@layer components {
+  .surface-card {
+    @apply rounded-2xl border border-border/80 bg-card text-card-foreground shadow-card;
+  }
+  .surface-card-interactive {
+    @apply rounded-2xl border border-border/80 bg-card text-card-foreground shadow-card transition-shadow duration-200 hover:shadow-card-hover;
+  }
+  .stat-value {
+    @apply text-3xl font-semibold tracking-tight tabular-nums text-foreground;
+  }
+  .stat-label {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+}
+
 /* Focus visible for accessibility */
 :focus-visible {
   @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;

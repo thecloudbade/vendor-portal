@@ -33,3 +33,23 @@ export function canInviteVendorUsers(role: string): boolean {
 export function canViewAudit(role: string): boolean {
   return role === 'admin' || role === 'ops';
 }
+
+/** NetSuite → MongoDB PO sync (POST …/integrations/netsuite/sync/purchase-orders) — org admin only; vendors never sync. */
+export function canSyncNetSuitePurchaseOrders(role: string): boolean {
+  return role === 'admin';
+}
+
+/** PUT …/integrations/netsuite/field-config — org admin only (server-enforced). */
+export function canManageNetSuiteFieldConfig(role: string): boolean {
+  return role === 'admin';
+}
+
+/** GET …/integrations/netsuite/field-config — org admin, ops, viewer (server-enforced). PUT remains admin-only. */
+export function canReadNetSuiteFieldConfig(role: string): boolean {
+  return role === 'admin' || role === 'ops' || role === 'viewer';
+}
+
+/** POST …/record-types/list, …/metadata/fetch — ORG_ADMIN or ORG_USER (server-enforced). */
+export function canFetchNetSuiteCatalog(role: string): boolean {
+  return role === 'admin' || role === 'ops';
+}

@@ -1,7 +1,7 @@
 /**
  * In-memory access token store.
- * Never persisted to localStorage/sessionStorage for security.
- * Cleared on tab close / refresh (re-auth required).
+ * Not persisted to localStorage/sessionStorage; on page refresh we restore
+ * session by calling the refresh endpoint (httpOnly cookie) and then GET /auth/me.
  */
 
 let accessToken: string | null = null;

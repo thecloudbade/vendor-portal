@@ -7,14 +7,17 @@ import {
   type ReactNode,
 } from 'react';
 import { memoryTokenStore } from '@/services/storage/memoryTokenStore';
+import { refreshTokenStore } from '@/services/storage/refreshTokenStore';
 import {
   setSessionExpiredHandler,
   refreshAccessToken,
   triggerSessionExpired,
 } from '@/services/http/interceptors';
 import type { AuthUser } from '@/modules/common/types/api';
+import { parseAuthMeResponse } from '@/modules/auth/utils/mapApiUser';
 import { http } from '@/services/http/client';
 import { ApiError } from '@/services/http/client';
+import { ROUTES } from '@/modules/common/constants/routes';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -40,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     setUserState(null);
     memoryTokenStore.clear();
+    refreshTokenStore.clear();
     try {
       await http.post('/auth/logout');
     } catch {
@@ -52,25 +56,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionExpiredHandler(() => {
       setUserState(null);
       memoryTokenStore.clear();
-      window.location.href = '/auth/login';
+      refreshTokenStore.clear();
+      const path = window.location.pathname;
+      const onOrgVendorAuth =
+        path.includes('/auth/login') ||
+        path.includes('/auth/verify-otp');
+      const onPlatformAuth =
+        path.includes('/auth/platform/login') ||
+        path.includes('/auth/platform/verify-otp');
+      const onAuthRoute = onOrgVendorAuth || onPlatformAuth || path.startsWith('/org-admin/');
+      if (!onAuthRoute) {
+        const login =
+          path.startsWith('/platform') || path.startsWith('/auth/platform')
+            ? ROUTES.PLATFORM.LOGIN
+            : ROUTES.LOGIN;
+        window.location.href = login;
+      }
     });
     return () => setSessionExpiredHandler(null);
   }, []);
 
   useEffect(() => {
-    if (!memoryTokenStore.hasToken()) {
-      setIsLoading(false);
-      setIsInitialized(true);
-      return;
-    }
     let cancelled = false;
-    (async () => {
+
+    async function restoreSession() {
       try {
-        const data = await http.get<{ user: AuthUser }>(ME_PATH);
-        if (!cancelled && data?.user) {
-          setUserState(data.user);
-        } else if (!cancelled) {
-          memoryTokenStore.clear();
+        if (memoryTokenStore.hasToken()) {
+          const data = await http.get<unknown>(ME_PATH);
+          const user = parseAuthMeResponse(data);
+          if (!cancelled && user) {
+            setUserState(user);
+            return;
+          }
+          if (!cancelled) memoryTokenStore.clear();
+        }
+
+        try {
+          await refreshAccessToken();
+          if (cancelled) return;
+          const data = await http.get<unknown>(ME_PATH);
+          const user = parseAuthMeResponse(data);
+          if (!cancelled && user) setUserState(user);
+          else if (!cancelled) memoryTokenStore.clear();
+        } catch {
+          if (!cancelled) {
+            memoryTokenStore.clear();
+            setUserState(null);
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -78,8 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (apiErr?.isUnauthorized) {
           try {
             await refreshAccessToken();
-            const retry = await http.get<{ user: AuthUser }>(ME_PATH);
-            if (!cancelled && retry?.user) setUserState(retry.user);
+            if (cancelled) return;
+            const retry = await http.get<unknown>(ME_PATH);
+            const user = parseAuthMeResponse(retry);
+            if (!cancelled && user) setUserState(user);
             else if (!cancelled) memoryTokenStore.clear();
           } catch {
             if (!cancelled) {
@@ -88,8 +122,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
         } else {
-          memoryTokenStore.clear();
-          setUserState(null);
+          if (!cancelled) {
+            memoryTokenStore.clear();
+            setUserState(null);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -97,7 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsInitialized(true);
         }
       }
-    })();
+    }
+
+    restoreSession();
     return () => {
       cancelled = true;
     };

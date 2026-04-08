@@ -1,9 +1,10 @@
-export type UserType = 'org' | 'vendor';
+export type UserType = 'org' | 'vendor' | 'platform';
 
 export type OrgRole = 'admin' | 'ops' | 'viewer';
 export type VendorRole = 'admin' | 'operator';
+export type PlatformRole = 'SUPERADMIN';
 
-export type Role = OrgRole | VendorRole;
+export type Role = OrgRole | VendorRole | PlatformRole;
 
 export interface TenantContext {
   tenantId: string;
@@ -16,10 +17,14 @@ export interface AuthUser {
   email: string;
   userType: UserType;
   role: Role;
+  /** Empty for platform superadmin (no org scope) */
   tenantId: string;
+  /** Empty for platform superadmin */
   orgId: string;
   vendorId?: string;
   name?: string;
+  /** From GET /auth/me when API includes org context */
+  orgName?: string;
 }
 
 export interface AuthResponse {

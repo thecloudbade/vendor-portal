@@ -5,8 +5,9 @@
  */
 
 import { memoryTokenStore } from '@/services/storage/memoryTokenStore';
+import { refreshTokenStore } from '@/services/storage/refreshTokenStore';
 import { getCsrfHeaders } from '@/services/security/csrf';
-import type { ApiError } from './client';
+import { getApiBaseUrl, type ApiError } from './client';
 
 export type OnSessionExpired = () => void;
 
@@ -18,29 +19,66 @@ export function setSessionExpiredHandler(handler: OnSessionExpired | null): void
 
 export function triggerSessionExpired(): void {
   memoryTokenStore.clear();
+  refreshTokenStore.clear();
   onSessionExpired?.();
 }
 
+/** Refresh response: accessToken, expiresIn; optionally refreshToken if rotated */
+interface RefreshData {
+  accessToken: string;
+  expiresIn?: string;
+  refreshToken?: string;
+}
+
 /**
- * Attempt silent refresh; returns new access token or throws.
+ * Exchange refresh token for new access token. Sends refresh token in body
+ * (or use Authorization: Bearer <refreshToken> per API). 401 = invalid/expired, re-login required.
  */
 export async function refreshAccessToken(): Promise<string> {
-  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/auth/refresh`, {
+  const refreshToken = refreshTokenStore.get();
+  if (!refreshToken) {
+    /** Do not call triggerSessionExpired here — that redirects to /auth/login and causes an infinite reload loop when the user is already on the login page. */
+    throw new Error('No refresh token');
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getCsrfHeaders(),
+  };
+
+  const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
-    headers: getCsrfHeaders(),
+    headers,
+    body: JSON.stringify({ refreshToken }),
   });
+
+  if (res.status === 401) {
+    triggerSessionExpired();
+    throw new Error('Refresh token invalid or expired');
+  }
   if (!res.ok) {
     triggerSessionExpired();
     throw new Error('Refresh failed');
   }
-  const data = (await res.json()) as { accessToken: string };
-  if (!data.accessToken) {
+
+  const raw = (await res.json()) as unknown;
+  const data: RefreshData =
+    raw && typeof raw === 'object' && 'data' in raw
+      ? (raw as { data: RefreshData }).data
+      : (raw as RefreshData);
+
+  const accessToken = data?.accessToken;
+  if (!accessToken) {
     triggerSessionExpired();
     throw new Error('No access token in refresh response');
   }
-  memoryTokenStore.set(data.accessToken);
-  return data.accessToken;
+
+  memoryTokenStore.set(accessToken);
+  if (data.refreshToken) {
+    refreshTokenStore.set(data.refreshToken);
+  }
+  return accessToken;
 }
 
 /**

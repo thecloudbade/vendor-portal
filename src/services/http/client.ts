@@ -6,7 +6,16 @@
 import { memoryTokenStore } from '@/services/storage/memoryTokenStore';
 import { getCsrfHeaders } from '@/services/security/csrf';
 
-const getBaseUrl = () => import.meta.env.VITE_API_BASE_URL ?? '';
+/**
+ * When unset, relative URLs hit the Vite dev server (5173) — wrong for API calls.
+ * Default to local API in dev so OTP/login work without a .env copy step.
+ */
+export const getApiBaseUrl = () => {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (fromEnv) return fromEnv;
+  if (import.meta.env.DEV) return 'http://localhost:8080/api/v1';
+  return '';
+};
 
 export type RequestConfig = RequestInit & {
   params?: Record<string, string | number | boolean | undefined>;
@@ -14,8 +23,22 @@ export type RequestConfig = RequestInit & {
   skipCsrf?: boolean;
 };
 
+/** Unwrap `{ success: true, data }` from API; throw on `success: false`. */
+export function unwrapApiBody(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body;
+  if (!('success' in body)) return body;
+  const o = body as { success: boolean; data?: unknown; error?: { message?: string } };
+  if (o.success === false) {
+    throw new Error(o.error?.message ?? 'Request failed');
+  }
+  if (o.success === true && 'data' in o) {
+    return o.data;
+  }
+  return body;
+}
+
 function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
-  const base = getBaseUrl().replace(/\/$/, '');
+  const base = getApiBaseUrl().replace(/\/$/, '');
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   let url = `${base}${normalizedPath}`;
   if (params && Object.keys(params).length > 0) {
@@ -61,13 +84,23 @@ export async function request<T>(
   });
 
   if (!response.ok) {
-    const err = new ApiError(response.status, response.statusText, await response.text());
-    throw err;
+    const text = await response.text();
+    let message = response.statusText;
+    try {
+      const j = JSON.parse(text) as { error?: { message?: string } };
+      if (j?.error?.message) message = j.error.message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(response.status, message, text);
   }
 
   const contentType = response.headers.get('Content-Type');
   if (contentType?.includes('application/json')) {
-    return response.json() as Promise<T>;
+    const text = await response.text();
+    if (!text.trim()) return undefined as T;
+    const parsed = JSON.parse(text) as unknown;
+    return unwrapApiBody(parsed) as T;
   }
   return response as unknown as T;
 }
@@ -88,10 +121,10 @@ export const http = {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    statusText: string,
+    message: string,
     public body?: string
   ) {
-    super(`${status} ${statusText}`);
+    super(message);
     this.name = 'ApiError';
   }
 

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,24 +14,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
+import { formatDateTime } from '@/modules/common/utils/format';
 import { emailSchema } from '@/modules/common/utils/validators';
+import { Loader2, PlusCircle, Send } from 'lucide-react';
 
 const createSchema = z.object({
-  name: z.string().min(1, 'Name required'),
-  email: z.string().email().optional().or(z.literal('')),
+  vendorCode: z.string().min(1, 'Vendor code required'),
+  vendorName: z.string().min(1, 'Vendor name required'),
+  authorizedEmails: z.string().min(1, 'At least one email'),
 });
 
 const inviteSchema = z.object({
   email: emailSchema,
-  role: z.enum(['admin', 'operator']).optional(),
 });
 
 type CreateValues = z.infer<typeof createSchema>;
@@ -55,13 +49,13 @@ export function VendorInviteDialog({
 }: VendorInviteDialogProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [role, setRole] = useState<string>('operator');
 
   const createMutation = useMutation({
-    mutationFn: (payload: { name: string; email?: string }) => createVendor(payload),
+    mutationFn: (payload: { vendorCode: string; vendorName: string; authorizedEmails: string[] }) =>
+      createVendor(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org', 'vendors'] });
-      toast({ title: 'Vendor created', description: 'Invite sent by email if provided.' });
+      toast({ title: 'Vendor created' });
       onSuccess?.();
     },
     onError: (e: Error) => {
@@ -70,12 +64,21 @@ export function VendorInviteDialog({
   });
 
   const inviteMutation = useMutation({
-    mutationFn: (payload: { email: string; role?: string }) =>
-      inviteVendorUser(vendorId!, payload),
-    onSuccess: () => {
+    mutationFn: (payload: { email: string }) => inviteVendorUser(vendorId!, payload),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['org', 'vendors'] });
       queryClient.invalidateQueries({ queryKey: ['org', 'vendor', vendorId] });
-      toast({ title: 'Invite sent', description: 'Vendor user will receive an email.' });
+      queryClient.invalidateQueries({ queryKey: ['org', 'vendor', vendorId, 'users'] });
+      const expires =
+        result.expiresAt && result.expiresAt.trim() !== ''
+          ? formatDateTime(result.expiresAt)
+          : null;
+      toast({
+        title: 'Invite sent',
+        description: expires
+          ? `Invitation expires ${expires}. They’ll receive an email with next steps.`
+          : 'Vendor user will receive an email with next steps.',
+      });
       onSuccess?.();
     },
     onError: (e: Error) => {
@@ -85,23 +88,28 @@ export function VendorInviteDialog({
 
   const createForm = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: '', email: '' },
+    defaultValues: { vendorCode: '', vendorName: '', authorizedEmails: '' },
   });
 
   const inviteForm = useForm<InviteValues>({
     resolver: zodResolver(inviteSchema),
-    defaultValues: { email: '', role: 'operator' },
+    defaultValues: { email: '' },
   });
 
   const onCreate = (data: CreateValues) => {
+    const emails = data.authorizedEmails
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     createMutation.mutate({
-      name: data.name,
-      email: data.email || undefined,
+      vendorCode: data.vendorCode.trim(),
+      vendorName: data.vendorName.trim(),
+      authorizedEmails: emails,
     });
   };
 
   const onInvite = (data: InviteValues) => {
-    inviteMutation.mutate({ email: data.email, role: data.role ?? role });
+    inviteMutation.mutate({ email: data.email });
   };
 
   if (mode === 'create') {
@@ -110,29 +118,49 @@ export function VendorInviteDialog({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create vendor</DialogTitle>
-            <DialogDescription>Create a vendor and optionally send an invite by email.</DialogDescription>
+            <DialogDescription>POST /vendors — vendor code, name, authorized emails.</DialogDescription>
           </DialogHeader>
           <form onSubmit={createForm.handleSubmit(onCreate)} className="space-y-4">
             <div>
-              <Label htmlFor="name">Vendor name</Label>
-              <Input id="name" {...createForm.register('name')} className="mt-1" />
-              {createForm.formState.errors.name && (
-                <p className="text-sm text-destructive mt-1">{createForm.formState.errors.name.message}</p>
+              <Label htmlFor="vendorCode">Vendor code</Label>
+              <Input id="vendorCode" {...createForm.register('vendorCode')} className="mt-1" placeholder="V001" />
+              {createForm.formState.errors.vendorCode && (
+                <p className="text-sm text-destructive mt-1">{createForm.formState.errors.vendorCode.message}</p>
               )}
             </div>
             <div>
-              <Label htmlFor="email">Invite email (optional)</Label>
-              <Input id="email" type="email" {...createForm.register('email')} className="mt-1" />
-              {createForm.formState.errors.email && (
-                <p className="text-sm text-destructive mt-1">{createForm.formState.errors.email.message}</p>
+              <Label htmlFor="vendorName">Vendor name</Label>
+              <Input id="vendorName" {...createForm.register('vendorName')} className="mt-1" />
+              {createForm.formState.errors.vendorName && (
+                <p className="text-sm text-destructive mt-1">{createForm.formState.errors.vendorName.message}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="authorizedEmails">Authorized emails (comma-separated)</Label>
+              <Input
+                id="authorizedEmails"
+                type="text"
+                {...createForm.register('authorizedEmails')}
+                className="mt-1"
+                placeholder="vendor@example.com"
+              />
+              {createForm.formState.errors.authorizedEmails && (
+                <p className="text-sm text-destructive mt-1">
+                  {createForm.formState.errors.authorizedEmails.message}
+                </p>
               )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                Create
+              <Button type="submit" disabled={createMutation.isPending} className="gap-2">
+                {createMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PlusCircle className="h-4 w-4" />
+                )}
+                Create vendor
               </Button>
             </DialogFooter>
           </form>
@@ -146,7 +174,7 @@ export function VendorInviteDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite vendor user</DialogTitle>
-          <DialogDescription>Send an invite by email. User will sign up with OTP.</DialogDescription>
+          <DialogDescription>POST /vendors/:id/invite — email only.</DialogDescription>
         </DialogHeader>
         <form onSubmit={inviteForm.handleSubmit(onInvite)} className="space-y-4">
           <div>
@@ -156,23 +184,16 @@ export function VendorInviteDialog({
               <p className="text-sm text-destructive mt-1">{inviteForm.formState.errors.email.message}</p>
             )}
           </div>
-          <div>
-            <Label>Role</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="admin">Vendor Admin</SelectItem>
-                <SelectItem value="operator">Vendor Operator</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={inviteMutation.isPending}>
+            <Button type="submit" disabled={inviteMutation.isPending} className="gap-2">
+              {inviteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
               Send invite
             </Button>
           </DialogFooter>
