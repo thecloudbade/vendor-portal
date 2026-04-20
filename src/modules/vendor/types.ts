@@ -1,4 +1,9 @@
+import type { PoUploadListEntry } from '@/modules/common/utils/mapPoUploadFromApi';
+import type { NetsuiteDocumentPushSummary } from '@/modules/common/types/netsuiteDocumentPush';
 import type { PortalPOLineItem } from '@/modules/common/utils/portalPoLineItem';
+
+export type { NetsuiteDocumentPushSummary };
+export type VendorPoUploadEntry = PoUploadListEntry;
 
 export interface POListItem {
   id: string;
@@ -36,6 +41,8 @@ export interface PODetail {
   requiredDocs: string[];
   /** Present when API includes org upload validation rules on PO detail. */
   uploadRules?: VendorUploadRules;
+  /** Submissions on this PO (same shape as org PO detail when API includes `uploads`). */
+  uploads?: VendorPoUploadEntry[];
   createdAt: string;
   updatedAt?: string;
   netsuiteTransId?: string;
@@ -77,6 +84,8 @@ export interface UploadValidationResult {
   warnings?: string[];
   uploadId?: string;
   id?: string;
+  /** Present after successful PL/CI save when PO is linked to NetSuite (async push). */
+  netsuiteDocumentPush?: NetsuiteDocumentPushSummary;
   mismatches?: QtyMismatchLine[];
   /**
    * When validate-only ran with `validationDebug`, one entry per doc type validated in the batch.

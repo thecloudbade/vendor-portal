@@ -46,6 +46,10 @@ const putSchema = z.object({
   restletTypeVendors: z.string().min(1),
   restletTypePurchaseOrders: z.string().min(1),
   restletTypePurchaseLineData: z.string().min(1),
+  restletTypeDocumentUpload: z.string().optional(),
+  documentUploadFolderId: z.string().optional(),
+  documentUploadQueryPage: z.string().optional(),
+  documentUploadQueryLimit: z.string().optional(),
   consumerKey: z.string().optional(),
   consumerSecret: z.string().optional(),
   tokenId: z.string().optional(),
@@ -94,6 +98,10 @@ export function NetSuiteIntegrationCard() {
       restletTypeVendors: 'vendors',
       restletTypePurchaseOrders: 'purchaseorders',
       restletTypePurchaseLineData: 'purchaseLineData',
+      restletTypeDocumentUpload: 'purchaseorders',
+      documentUploadFolderId: '',
+      documentUploadQueryPage: '1',
+      documentUploadQueryLimit: '100',
       consumerKey: '',
       consumerSecret: '',
       tokenId: '',
@@ -111,6 +119,13 @@ export function NetSuiteIntegrationCard() {
       restletTypeVendors: status.typeVendors ?? 'vendors',
       restletTypePurchaseOrders: status.typePurchaseOrders ?? 'purchaseorders',
       restletTypePurchaseLineData: status.typePurchaseLineData ?? 'purchaseLineData',
+      restletTypeDocumentUpload: status.restletTypeDocumentUpload ?? 'purchaseorders',
+      documentUploadFolderId:
+        status.documentUploadFolderId != null && Number.isFinite(Number(status.documentUploadFolderId))
+          ? String(status.documentUploadFolderId)
+          : '',
+      documentUploadQueryPage: status.documentUploadQueryPage ?? '1',
+      documentUploadQueryLimit: status.documentUploadQueryLimit ?? '100',
       consumerKey: '',
       consumerSecret: '',
       tokenId: '',
@@ -129,6 +144,22 @@ export function NetSuiteIntegrationCard() {
         restletTypePurchaseOrders: payload.restletTypePurchaseOrders.trim(),
         restletTypePurchaseLineData: payload.restletTypePurchaseLineData.trim(),
       };
+      const folderStr = (payload.documentUploadFolderId ?? '').trim();
+      if (folderStr === '') {
+        body.documentUploadFolderId = null;
+      } else {
+        const n = Number(folderStr);
+        if (!Number.isFinite(n)) {
+          return Promise.reject(new Error('File cabinet folder ID must be a number (NetSuite internal id)'));
+        }
+        body.documentUploadFolderId = n;
+      }
+      const docType = (payload.restletTypeDocumentUpload ?? '').trim();
+      if (docType) body.restletTypeDocumentUpload = docType;
+      const dqPage = (payload.documentUploadQueryPage ?? '').trim();
+      if (dqPage) body.documentUploadQueryPage = dqPage;
+      const dqLimit = (payload.documentUploadQueryLimit ?? '').trim();
+      if (dqLimit) body.documentUploadQueryLimit = dqLimit;
       if (payload.consumerKey?.trim()) body.consumerKey = payload.consumerKey.trim();
       if (payload.consumerSecret?.trim()) body.consumerSecret = payload.consumerSecret.trim();
       if (payload.tokenId?.trim()) body.tokenId = payload.tokenId.trim();
@@ -368,6 +399,45 @@ export function NetSuiteIntegrationCard() {
             <div>
               <Label htmlFor="ns-type-lines">Purchase line data (for later)</Label>
               <Input id="ns-type-lines" {...form.register('restletTypePurchaseLineData')} className="mt-1" />
+            </div>
+          </div>
+          <div className="space-y-3 rounded-lg border border-dashed border-border/80 bg-muted/10 p-4">
+            <p className="text-sm font-medium">Vendor PL/CI → NetSuite</p>
+            <p className="text-xs text-muted-foreground">
+              Required for sending packing lists and commercial invoices to NetSuite after upload. Use the{' '}
+              <strong>internal id</strong> of a File Cabinet folder in NetSuite (often visible in the folder URL or list).
+            </p>
+            <div>
+              <Label htmlFor="ns-doc-folder">File cabinet folder internal ID</Label>
+              <Input
+                id="ns-doc-folder"
+                type="text"
+                inputMode="numeric"
+                {...form.register('documentUploadFolderId')}
+                className="mt-1"
+                placeholder="e.g. 200"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="ns-doc-type">RESTlet type (document POST)</Label>
+                <Input
+                  id="ns-doc-type"
+                  {...form.register('restletTypeDocumentUpload')}
+                  className="mt-1"
+                  placeholder="purchaseorders"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:col-span-1">
+                <div>
+                  <Label htmlFor="ns-doc-page">Query page</Label>
+                  <Input id="ns-doc-page" {...form.register('documentUploadQueryPage')} className="mt-1" placeholder="1" />
+                </div>
+                <div>
+                  <Label htmlFor="ns-doc-limit">Query limit</Label>
+                  <Input id="ns-doc-limit" {...form.register('documentUploadQueryLimit')} className="mt-1" placeholder="100" />
+                </div>
+              </div>
             </div>
           </div>
           <div className="space-y-3 border-t pt-4">

@@ -8,6 +8,7 @@ import { formatDateTime } from '@/modules/common/utils/format';
 import { QtyMismatchRowsTable } from './QtyMismatchRowsTable';
 import { DeviationPercentBars } from './DeviationPercentBars';
 import { mismatchRowsToBarPoints, tolerancePctForUploadType } from '../utils/poUploadDeviation';
+import { NetSuiteDocumentPushStatus } from '@/modules/common/components/NetSuiteDocumentPushStatus';
 import { AlertTriangle, Download, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -112,6 +113,13 @@ export function OrgPoUploadDetailPanel({
               invoice {po.uploadRules.commercialInvoiceQtyTolerancePct}%).
             </p>
           )}
+
+          {upload.netsuiteDocumentPush?.status ? (
+            <div className="rounded-xl border border-border/80 bg-muted/10 p-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">NetSuite sync</p>
+              <NetSuiteDocumentPushStatus push={upload.netsuiteDocumentPush} />
+            </div>
+          ) : null}
 
           <div className="rounded-xl border border-border/80 bg-muted/10 p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Deviation by line</p>

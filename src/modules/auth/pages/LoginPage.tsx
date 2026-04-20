@@ -1,8 +1,13 @@
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { requestOtp } from '../api/auth.api';
+import {
+  MFA_TOKEN_STORAGE_KEY,
+  loginOrgVendorPassword,
+  requestOtp,
+} from '../api/auth.api';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
 import { Button } from '@/components/ui/button';
@@ -13,36 +18,59 @@ import { AuthPageShell } from '../components/AuthPageShell';
 import { ArrowRight, Lock, Mail, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const schema = z.object({
+const otpOnlySchema = z.object({
   email: z.string().email('Enter a valid work email').toLowerCase().trim(),
 });
 
-type FormValues = z.infer<typeof schema>;
+const mfaSchema = z.object({
+  email: z.string().email('Enter a valid work email').toLowerCase().trim(),
+  password: z.string().min(1, 'Password is required'),
+});
+
+type OtpOnlyValues = z.infer<typeof otpOnlySchema>;
+type MfaValues = z.infer<typeof mfaSchema>;
+
+type SignInMode = 'mfa' | 'otp-only';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const [mode, setMode] = useState<SignInMode>('mfa');
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  const otpForm = useForm<OtpOnlyValues>({
+    resolver: zodResolver(otpOnlySchema),
     defaultValues: { email: '' },
   });
 
-  const onSubmit = async (data: FormValues) => {
+  const mfaForm = useForm<MfaValues>({
+    resolver: zodResolver(mfaSchema),
+    defaultValues: { email: '', password: '' },
+  });
+
+  const goVerify = (email: string, devOtp?: string) => {
+    const returnUrl = validateReturnUrl(new URLSearchParams(location.search).get('returnUrl'));
+    navigate(
+      `${ROUTES.VERIFY_OTP}?email=${encodeURIComponent(email)}${
+        returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''
+      }`,
+      { replace: true, state: devOtp ? { devOtp } : undefined }
+    );
+  };
+
+  const onOtpOnly = async (data: OtpOnlyValues) => {
     try {
-      await requestOtp({ email: data.email });
-      const returnUrl = validateReturnUrl(new URLSearchParams(location.search).get('returnUrl'));
-      navigate(
-        `${ROUTES.VERIFY_OTP}?email=${encodeURIComponent(data.email)}${
-          returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''
-        }`,
-        { replace: true }
-      );
+      try {
+        sessionStorage.removeItem(MFA_TOKEN_STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
+      const res = await requestOtp({ email: data.email });
+      const devOtp =
+        import.meta.env.DEV && res.otp != null && String(res.otp).trim() !== ''
+          ? String(res.otp).trim()
+          : undefined;
+      goVerify(data.email, devOtp);
     } catch (e) {
       toast({
         title: 'Couldn’t send code',
@@ -52,10 +80,32 @@ export function LoginPage() {
     }
   };
 
+  const onMfa = async (data: MfaValues) => {
+    try {
+      const res = await loginOrgVendorPassword({ email: data.email, password: data.password });
+      try {
+        sessionStorage.setItem(MFA_TOKEN_STORAGE_KEY, res.mfaToken);
+      } catch {
+        /* ignore */
+      }
+      const devOtp =
+        import.meta.env.DEV && res.otp != null && String(res.otp).trim() !== ''
+          ? String(res.otp).trim()
+          : undefined;
+      goVerify(data.email, devOtp);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Sign-in failed';
+      toast({
+        title: 'Sign-in failed',
+        description: msg,
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <AuthPageShell>
       <div className="w-full max-w-[440px] animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {/* Brand / hero */}
         <div className="mb-10 flex flex-col items-center text-center">
           <div className="relative mb-8">
             <div
@@ -75,11 +125,35 @@ export function LoginPage() {
             Sign in to your account
           </h1>
           <p className="mt-3 max-w-[340px] text-[15px] leading-relaxed text-muted-foreground">
-            We&apos;ll email you a one-time code—fast, secure, no password to manage.
+            {mode === 'mfa'
+              ? 'Enter your work email and password, then verify the one-time code we email you.'
+              : 'We’ll email you a one-time code no password required.'}
           </p>
         </div>
 
-        {/* Glass card + gradient hairline */}
+        <div className="mb-6 flex rounded-xl border border-border/80 bg-muted/30 p-1 text-[13px] font-medium">
+          <button
+            type="button"
+            className={cn(
+              'flex-1 rounded-lg py-2 transition-colors',
+              mode === 'mfa' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+            onClick={() => setMode('mfa')}
+          >
+            Password + code
+          </button>
+          <button
+            type="button"
+            className={cn(
+              'flex-1 rounded-lg py-2 transition-colors',
+              mode === 'otp-only' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+            onClick={() => setMode('otp-only')}
+          >
+            Email code only
+          </button>
+        </div>
+
         <div className="relative">
           <div
             className="absolute -inset-px rounded-2xl bg-gradient-to-b from-primary/35 via-primary/[0.08] to-border/40 p-px dark:from-primary/40 dark:via-primary/15 dark:to-border/30"
@@ -92,70 +166,129 @@ export function LoginPage() {
             />
             <CardHeader className="space-y-1.5 px-7 pb-1 pt-8 sm:px-9 sm:pt-9">
               <CardTitle className="text-[15px] font-semibold tracking-tight text-foreground">
-                Work email
+                {mode === 'mfa' ? 'Work email & password' : 'Work email'}
               </CardTitle>
-              <CardDescription className="text-[13px] leading-relaxed text-muted-foreground">Sign in with your work email.</CardDescription>
+              <CardDescription className="text-[13px] leading-relaxed text-muted-foreground">
+                {mode === 'mfa'
+                  ? 'After password, you’ll enter a 6-digit code from email.'
+                  : 'For accounts without a password, or when your org uses codes only.'}
+              </CardDescription>
             </CardHeader>
             <CardContent className="px-7 pb-8 pt-4 sm:px-9 sm:pb-9">
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                <div className="space-y-2">
-                  <label htmlFor="email" className="sr-only">
-                    Work email
-                  </label>
-                  <div className="group relative">
-                    <Mail
-                      className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary"
-                      aria-hidden
-                    />
-                    <Input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="you@company.com"
-                      className={cn(
-                        'h-12 rounded-xl border-border/80 bg-muted/40 pl-11 text-[15px] shadow-inner shadow-black/[0.02] transition-all placeholder:text-muted-foreground/65',
-                        'focus-visible:border-primary/40 focus-visible:bg-background focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-visible:ring-0',
-                        errors.email && 'border-destructive/80 focus-visible:shadow-[0_0_0_3px_hsl(var(--destructive)/0.15)]'
-                      )}
-                      {...register('email')}
-                    />
-                  </div>
-                  {errors.email && (
-                    <p className="text-xs font-medium text-destructive">{errors.email.message}</p>
-                  )}
-                </div>
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="group relative h-12 w-full overflow-hidden rounded-xl text-[15px] font-semibold shadow-lg shadow-primary/20 transition-all hover:shadow-xl hover:shadow-primary/25"
-                  disabled={isSubmitting}
-                >
-                  <span className="relative z-10 flex items-center justify-center gap-2">
-                    {isSubmitting ? (
-                      'Sending code…'
-                    ) : (
-                      <>
-                        Continue
-                        <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-                      </>
+              {mode === 'otp-only' ? (
+                <form onSubmit={otpForm.handleSubmit(onOtpOnly)} className="space-y-6">
+                  <div className="space-y-2">
+                    <label htmlFor="email-otp" className="sr-only">
+                      Work email
+                    </label>
+                    <div className="group relative">
+                      <Mail
+                        className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary"
+                        aria-hidden
+                      />
+                      <Input
+                        id="email-otp"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="you@company.com"
+                        className={cn(
+                          'h-12 rounded-xl border-border/80 bg-muted/40 pl-11 text-[15px]',
+                          otpForm.formState.errors.email && 'border-destructive/80'
+                        )}
+                        {...otpForm.register('email')}
+                      />
+                    </div>
+                    {otpForm.formState.errors.email && (
+                      <p className="text-xs font-medium text-destructive">{otpForm.formState.errors.email.message}</p>
                     )}
-                  </span>
-                </Button>
-              </form>
+                  </div>
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="h-12 w-full rounded-xl text-[15px] font-semibold"
+                    disabled={otpForm.formState.isSubmitting}
+                  >
+                    {otpForm.formState.isSubmitting ? 'Sending code…' : 'Continue'}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={mfaForm.handleSubmit(onMfa)} className="space-y-5">
+                  <div className="space-y-2">
+                    <label htmlFor="email-mfa" className="sr-only">
+                      Work email
+                    </label>
+                    <div className="group relative">
+                      <Mail
+                        className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground group-focus-within:text-primary"
+                        aria-hidden
+                      />
+                      <Input
+                        id="email-mfa"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="you@company.com"
+                        className="h-12 rounded-xl border-border/80 bg-muted/40 pl-11 text-[15px]"
+                        {...mfaForm.register('email')}
+                      />
+                    </div>
+                    {mfaForm.formState.errors.email && (
+                      <p className="text-xs font-medium text-destructive">{mfaForm.formState.errors.email.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="password-mfa" className="sr-only">
+                      Password
+                    </label>
+                    <div className="group relative">
+                      <Lock
+                        className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground group-focus-within:text-primary"
+                        aria-hidden
+                      />
+                      <Input
+                        id="password-mfa"
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="Password"
+                        className="h-12 rounded-xl border-border/80 bg-muted/40 pl-11 text-[15px]"
+                        {...mfaForm.register('password')}
+                      />
+                    </div>
+                    {mfaForm.formState.errors.password && (
+                      <p className="text-xs font-medium text-destructive">{mfaForm.formState.errors.password.message}</p>
+                    )}
+                  </div>
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="group relative h-12 w-full overflow-hidden rounded-xl text-[15px] font-semibold shadow-lg shadow-primary/20"
+                    disabled={mfaForm.formState.isSubmitting}
+                  >
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      {mfaForm.formState.isSubmitting ? (
+                        'Signing in…'
+                      ) : (
+                        <>
+                          Continue
+                          <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+                        </>
+                      )}
+                    </span>
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Trust strip */}
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[11px] text-muted-foreground sm:text-xs">
           <span className="inline-flex items-center gap-1.5">
             <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
-            Encrypted session
+            Password + MFA when enabled
           </span>
           <span className="hidden h-3 w-px bg-border sm:block" aria-hidden />
           <span className="inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden />
-            Passwordless OTP
+            OTP verification
           </span>
         </div>
 

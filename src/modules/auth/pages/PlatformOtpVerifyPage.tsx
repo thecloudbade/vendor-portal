@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -22,6 +22,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function PlatformOtpVerifyPage() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const { toast } = useToast();
@@ -71,6 +72,11 @@ export function PlatformOtpVerifyPage() {
 
   if (!email) return null;
 
+  const devOtp =
+    import.meta.env.DEV && location.state && typeof location.state === 'object' && location.state !== null
+      ? (location.state as { devOtp?: string }).devOtp
+      : undefined;
+
   const backHref = `${ROUTES.PLATFORM.LOGIN}${
     searchParams.get('returnUrl') ? `?returnUrl=${encodeURIComponent(searchParams.get('returnUrl') ?? '')}` : ''
   }`;
@@ -106,6 +112,18 @@ export function PlatformOtpVerifyPage() {
             <CardDescription className="text-[13px]">Enter the 6-digit code to open the platform console.</CardDescription>
           </CardHeader>
           <CardContent className="px-7 pb-8 pt-4 sm:px-9 sm:pb-9">
+            {import.meta.env.DEV && devOtp ? (
+              <div
+                className="mb-6 rounded-xl border border-dashed border-violet-500/50 bg-violet-500/10 px-4 py-3 text-center dark:bg-violet-500/15"
+                role="status"
+                aria-label="Development OTP"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-900 dark:text-violet-200">
+                  Dev — OTP
+                </p>
+                <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
+              </div>
+            ) : null}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <div>
                 <OtpInput

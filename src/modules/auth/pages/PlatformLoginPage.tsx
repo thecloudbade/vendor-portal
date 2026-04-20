@@ -35,13 +35,17 @@ export function PlatformLoginPage() {
 
   const onSubmit = async (data: FormValues) => {
     try {
-      await requestPlatformOtp({ email: data.email });
+      const res = await requestPlatformOtp({ email: data.email });
       const returnUrl = validateReturnUrl(new URLSearchParams(location.search).get('returnUrl'));
+      const devOtp =
+        import.meta.env.DEV && res.otp != null && String(res.otp).trim() !== ''
+          ? String(res.otp).trim()
+          : undefined;
       navigate(
         `${ROUTES.PLATFORM.VERIFY_OTP}?email=${encodeURIComponent(data.email)}${
           returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''
         }`,
-        { replace: true }
+        { replace: true, state: devOtp ? { devOtp } : undefined }
       );
     } catch (e) {
       toast({

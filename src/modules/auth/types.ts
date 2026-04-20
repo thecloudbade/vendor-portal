@@ -7,6 +7,8 @@ export interface RequestOtpPayload {
 export interface VerifyOtpPayload {
   email: string;
   otp: string;
+  /** Present after password step (POST /auth/mfa/password); required when the account has a password. */
+  mfaToken?: string;
 }
 
 export interface AuthState {

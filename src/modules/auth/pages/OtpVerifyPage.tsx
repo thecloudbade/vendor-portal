@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { verifyOtp } from '../api/auth.api';
+import {
+  MFA_TOKEN_STORAGE_KEY,
+  requestOtp,
+  resendMfaOtp,
+  verifyOtp,
+} from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { ROUTES, portalHomeForUserType } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
@@ -22,6 +27,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function OtpVerifyPage() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const { toast } = useToast();
@@ -51,7 +57,18 @@ export function OtpVerifyPage() {
 
   const onSubmit = async (data: FormValues) => {
     try {
-      const res = await verifyOtp({ email, otp: data.otp });
+      let mfaToken: string | undefined;
+      try {
+        mfaToken = sessionStorage.getItem(MFA_TOKEN_STORAGE_KEY) || undefined;
+      } catch {
+        mfaToken = undefined;
+      }
+      const res = await verifyOtp({ email, otp: data.otp, mfaToken });
+      try {
+        sessionStorage.removeItem(MFA_TOKEN_STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
       setUser(res.user);
       const returnUrl = validateReturnUrl(searchParams.get('returnUrl'));
       if (returnUrl) {
@@ -70,6 +87,47 @@ export function OtpVerifyPage() {
   };
 
   if (!email) return null;
+
+  const devOtp =
+    import.meta.env.DEV && location.state && typeof location.state === 'object' && location.state !== null
+      ? (location.state as { devOtp?: string }).devOtp
+      : undefined;
+
+  const [resendBusy, setResendBusy] = useState(false);
+
+  const handleResend = async () => {
+    let mfaToken: string | null = null;
+    try {
+      mfaToken = sessionStorage.getItem(MFA_TOKEN_STORAGE_KEY);
+    } catch {
+      mfaToken = null;
+    }
+    setResendBusy(true);
+    try {
+      if (mfaToken) {
+        const r = await resendMfaOtp(mfaToken);
+        if (import.meta.env.DEV && r.otp) {
+          toast({
+            title: 'Code sent (dev)',
+            description: `New OTP: ${r.otp}`,
+          });
+        } else {
+          toast({ title: 'Code sent', description: 'Check your email for a new code.' });
+        }
+      } else {
+        await requestOtp({ email });
+        toast({ title: 'Code sent', description: 'Check your email for a new code.' });
+      }
+    } catch (e) {
+      toast({
+        title: 'Could not resend',
+        description: e instanceof Error ? e.message : 'Try again shortly.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResendBusy(false);
+    }
+  };
 
   const backHref = `${ROUTES.LOGIN}${
     searchParams.get('returnUrl') ? `?returnUrl=${encodeURIComponent(searchParams.get('returnUrl') ?? '')}` : ''
@@ -122,6 +180,18 @@ export function OtpVerifyPage() {
               <CardDescription className="text-[13px] leading-relaxed text-muted-foreground">Enter the code from your email.</CardDescription>
             </CardHeader>
             <CardContent className="px-7 pb-8 pt-4 sm:px-9 sm:pb-9">
+              {import.meta.env.DEV && devOtp ? (
+                <div
+                  className="mb-6 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/10 px-4 py-3 text-center dark:bg-amber-500/15"
+                  role="status"
+                  aria-label="Development OTP"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                    Dev — OTP
+                  </p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
+                </div>
+              ) : null}
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 <div>
                   <OtpInput
@@ -150,6 +220,15 @@ export function OtpVerifyPage() {
                       </>
                     )}
                   </span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full text-[13px] text-muted-foreground"
+                  disabled={resendBusy}
+                  onClick={() => void handleResend()}
+                >
+                  {resendBusy ? 'Sending…' : 'Resend code'}
                 </Button>
               </form>
             </CardContent>

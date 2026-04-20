@@ -1,3 +1,4 @@
+import type { NetsuiteDocumentPushSummary } from '@/modules/common/types/netsuiteDocumentPush';
 import type { PortalPOLineItem } from '@/modules/common/utils/portalPoLineItem';
 
 export interface VendorListItem {
@@ -105,6 +106,8 @@ export interface POUploadEntry {
   mismatchCount?: number;
   /** Present when the API stored validation mismatch rows for this submission. */
   mismatches?: QtyMismatchRow[];
+  /** Async NetSuite RESTlet push for PL/CI (after upload). */
+  netsuiteDocumentPush?: NetsuiteDocumentPushSummary;
 }
 
 export interface PODetail {
@@ -240,6 +243,12 @@ export interface NetSuiteIntegrationStatus {
   typeVendors?: string;
   typePurchaseOrders?: string;
   typePurchaseLineData?: string;
+  /** RESTlet `type` query for POST PL/CI document upload (default purchaseorders). */
+  restletTypeDocumentUpload?: string;
+  /** NetSuite file cabinet folder internal id for vendor PL/CI PDF uploads. */
+  documentUploadFolderId?: number | null;
+  documentUploadQueryPage?: string;
+  documentUploadQueryLimit?: string;
   consumerKeyMasked?: string;
   tokenIdMasked?: string;
   lastSyncAt?: string | null;
@@ -270,6 +279,11 @@ export interface NetSuiteIntegrationPutPayload {
   restletTypeVendors: string;
   restletTypePurchaseOrders: string;
   restletTypePurchaseLineData: string;
+  restletTypeDocumentUpload?: string;
+  /** NetSuite file cabinet folder internal id; send `null` to clear. */
+  documentUploadFolderId?: number | null;
+  documentUploadQueryPage?: string;
+  documentUploadQueryLimit?: string;
   consumerKey?: string;
   consumerSecret?: string;
   tokenId?: string;

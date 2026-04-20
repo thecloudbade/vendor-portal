@@ -17,6 +17,7 @@ import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { OrgPoUploadDetailPanel } from '../components/OrgPoUploadDetailPanel';
+import { NetSuiteDocumentPushStatus } from '@/modules/common/components/NetSuiteDocumentPushStatus';
 import { DeviationPercentBars } from '../components/DeviationPercentBars';
 import {
   getLatestUpload,
@@ -50,6 +51,11 @@ export function PODetailsPage() {
     queryKey: ['org', 'po', poId],
     queryFn: () => getOrgPODetail(poId!),
     enabled: !!poId,
+    refetchInterval: (q) => {
+      const uploads = q.state.data?.uploads;
+      const pending = uploads?.some((u) => u.netsuiteDocumentPush?.status === 'PENDING');
+      return pending ? 5000 : false;
+    },
   });
 
   const selectedU = useMemo(
@@ -274,6 +280,7 @@ export function PODetailsPage() {
                     <th className="whitespace-nowrap px-4 py-3">Document</th>
                     <th className="whitespace-nowrap px-4 py-3">Status</th>
                     <th className="whitespace-nowrap px-4 py-3">Uploaded</th>
+                    <th className="whitespace-nowrap px-4 py-3">NetSuite</th>
                     <th className="whitespace-nowrap px-4 py-3">Qty</th>
                     <th className="whitespace-nowrap px-4 py-3 text-right"> </th>
                   </tr>
@@ -316,6 +323,13 @@ export function PODetailsPage() {
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground">
                           {formatDateTime(u.uploadedAt)}
+                        </td>
+                        <td className="max-w-[12rem] px-4 py-3 align-top">
+                          {u.netsuiteDocumentPush?.status ? (
+                            <NetSuiteDocumentPushStatus push={u.netsuiteDocumentPush} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 align-top">
                           {(u.hasQtyMismatch || (u.mismatchCount ?? 0) > 0) ? (

@@ -7,10 +7,37 @@ import { mapApiUser } from '@/modules/auth/utils/mapApiUser';
 
 export { mapApiUser } from '@/modules/auth/utils/mapApiUser';
 
-export async function requestOtp(
-  payload: RequestOtpPayload
-): Promise<{ success: boolean; message?: string }> {
+/** POST /auth/otp/request — in dev, API may include `otp` for local testing. */
+export type OtpRequestResult = { success: boolean; message?: string; otp?: string };
+
+export const MFA_TOKEN_STORAGE_KEY = 'vp_mfa_token';
+
+export async function requestOtp(payload: RequestOtpPayload): Promise<OtpRequestResult> {
   return http.post('/auth/otp/request', { email: payload.email }, {
+    skipAuth: true,
+    skipCsrf: true,
+  });
+}
+
+/** Org/vendor step 1: password → sends OTP; store returned mfaToken (see MFA_TOKEN_STORAGE_KEY) for verify + resend. */
+export type LoginMfaPasswordResult = {
+  mfaToken: string;
+  mfaExpiresIn?: string;
+  otp?: string;
+};
+
+export async function loginOrgVendorPassword(payload: {
+  email: string;
+  password: string;
+}): Promise<LoginMfaPasswordResult> {
+  return http.post<LoginMfaPasswordResult>('/auth/mfa/password', payload, {
+    skipAuth: true,
+    skipCsrf: true,
+  });
+}
+
+export async function resendMfaOtp(mfaToken: string): Promise<{ success?: boolean; otp?: string }> {
+  return http.post('/auth/mfa/resend', { mfaToken }, {
     skipAuth: true,
     skipCsrf: true,
   });
@@ -27,7 +54,11 @@ export interface VerifyOtpData {
 export async function verifyOtp(payload: VerifyOtpPayload): Promise<AuthResponse> {
   const data = await http.post<VerifyOtpData>(
     '/auth/otp/verify',
-    { email: payload.email, otp: payload.otp },
+    {
+      email: payload.email,
+      otp: payload.otp,
+      ...(payload.mfaToken ? { mfaToken: payload.mfaToken } : {}),
+    },
     { skipAuth: true }
   );
   const accessToken = data.accessToken;
@@ -42,9 +73,7 @@ export async function verifyOtp(payload: VerifyOtpPayload): Promise<AuthResponse
 }
 
 /** Platform superadmin only — POST /auth/platform/otp/request */
-export async function requestPlatformOtp(
-  payload: RequestOtpPayload
-): Promise<{ success: boolean; message?: string }> {
+export async function requestPlatformOtp(payload: RequestOtpPayload): Promise<OtpRequestResult> {
   return http.post('/auth/platform/otp/request', { email: payload.email }, {
     skipAuth: true,
     skipCsrf: true,

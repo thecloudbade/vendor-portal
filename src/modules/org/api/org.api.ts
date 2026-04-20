@@ -3,6 +3,7 @@ import { parseFilenameFromContentDisposition } from '@/modules/common/utils/pars
 import { memoryTokenStore } from '@/services/storage/memoryTokenStore';
 import { withRefreshRetry } from '@/services/http/interceptors';
 import { mapPortalPoLineItem } from '@/modules/common/utils/portalPoLineItem';
+import { mapPoUploadFromApi } from '@/modules/common/utils/mapPoUploadFromApi';
 import type { ApiListResponse } from '@/modules/common/types/api';
 import type {
   VendorListItem,
@@ -316,49 +317,7 @@ function unwrapOrgPODetailPayload(raw: unknown): Record<string, unknown> {
 }
 
 function mapPOUpload(raw: unknown): NonNullable<PODetail['uploads']>[number] {
-  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const uploadedAt = String(
-    r.uploadedAt ?? r.uploaded_at ?? r.createdAt ?? r.created_at ?? ''
-  );
-  const ver = r.version;
-  const mc = r.mismatchCount;
-  const hm = r.hasQtyMismatch;
-  return {
-    id: String(r.id ?? ''),
-    status: String(r.status ?? ''),
-    uploadedAt,
-    type: r.type != null ? String(r.type) : r.docType != null ? String(r.docType) : undefined,
-    fileName:
-      r.fileName != null
-        ? String(r.fileName)
-        : r.filename != null
-          ? String(r.filename)
-          : r.originalName != null
-            ? String(r.originalName)
-            : undefined,
-    version: (() => {
-      if (ver == null) return undefined;
-      const n = typeof ver === 'number' ? ver : Number(ver);
-      return Number.isFinite(n) ? n : undefined;
-    })(),
-    fileFormat: r.fileFormat != null ? String(r.fileFormat) : undefined,
-    hasQtyMismatch: typeof hm === 'boolean' ? hm : undefined,
-    mismatchCount:
-      typeof mc === 'number' && Number.isFinite(mc)
-        ? mc
-        : mc != null
-          ? Number(mc)
-          : undefined,
-    fileId:
-      r.fileId != null && String(r.fileId).trim() !== ''
-        ? String(r.fileId)
-        : r.file_id != null && String(r.file_id).trim() !== ''
-          ? String(r.file_id)
-          : undefined,
-    mismatches: Array.isArray(r.mismatches)
-      ? (r.mismatches as Record<string, unknown>[]).filter((row) => row && typeof row === 'object')
-      : undefined,
-  };
+  return mapPoUploadFromApi(raw);
 }
 
 function mixedRecord(raw: unknown): Record<string, unknown> | undefined {

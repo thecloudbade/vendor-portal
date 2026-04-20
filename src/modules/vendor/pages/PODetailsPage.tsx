@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getVendorPODetail, downloadPLTemplate, downloadCITemplate } from '../api/vendor.api';
+import { downloadOrgFile } from '@/modules/org/api/org.api';
 import { PageHeader } from '@/modules/common/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,8 @@ import { formatDateTime } from '@/modules/common/utils/format';
 import { EmptyState } from '@/modules/common/components/EmptyState';
 import { KeyValueFields } from '@/modules/common/components/KeyValueFields';
 import { PoLineItemsSection } from '@/modules/common/components/PoLineItemsSection';
-import { Download, FileText, ListOrdered, Loader2, PackageOpen, Upload } from 'lucide-react';
+import { NetSuiteDocumentPushStatus } from '@/modules/common/components/NetSuiteDocumentPushStatus';
+import { Download, FileText, ListOrdered, Loader2, PackageOpen, Paperclip, Upload } from 'lucide-react';
 import { VendorPoBackLink } from '../components/VendorPoBackLink';
 import { isMongoObjectIdString } from '@/modules/common/utils/mongoId';
 import { useToast } from '@/components/ui/use-toast';
@@ -27,6 +29,11 @@ export function PODetailsPage() {
     queryFn: () => getVendorPODetail(poId!),
     enabled: !!poId && validPortalId,
     retry: false,
+    refetchInterval: (q) => {
+      const uploads = q.state.data?.uploads;
+      const pending = uploads?.some((u) => u.netsuiteDocumentPush?.status === 'PENDING');
+      return pending ? 5000 : false;
+    },
   });
 
   if (!poId) return null;
@@ -70,6 +77,8 @@ export function PODetailsPage() {
   }
 
   const items = po.items ?? [];
+  const uploads = po.uploads ?? [];
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const poHeaderMeta = (
     <div className="space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm md:p-5">
@@ -197,6 +206,105 @@ export function PODetailsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {uploads.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Paperclip className="h-5 w-5" />
+              Your uploads
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
+              Submission status and NetSuite sync (when your buyer connects NetSuite).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <th className="whitespace-nowrap px-4 py-3">Document</th>
+                    <th className="whitespace-nowrap px-4 py-3">Status</th>
+                    <th className="whitespace-nowrap px-4 py-3">NetSuite</th>
+                    <th className="whitespace-nowrap px-4 py-3">Uploaded</th>
+                    <th className="whitespace-nowrap px-4 py-3 text-right"> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploads.map((u) => (
+                    <tr key={u.id} className="border-b border-border/50 last:border-0">
+                      <td className="max-w-[14rem] px-4 py-3 align-top">
+                        <p className="truncate font-medium text-foreground" title={u.fileName}>
+                          {u.fileName ?? '—'}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {u.type ? (
+                            <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium">{u.type}</span>
+                          ) : null}
+                          {u.fileFormat ? (
+                            <span className="rounded-md bg-secondary/60 px-1.5 py-0.5 text-[11px]">{u.fileFormat}</span>
+                          ) : null}
+                          {u.version != null ? (
+                            <span className="text-[11px] text-muted-foreground">v{u.version}</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 align-top">
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="max-w-[14rem] px-4 py-3 align-top">
+                        {u.netsuiteDocumentPush?.status ? (
+                          <NetSuiteDocumentPushStatus push={u.netsuiteDocumentPush} />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground">
+                        {formatDateTime(u.uploadedAt)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right align-top">
+                        {u.fileId ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            disabled={downloadingId === u.id}
+                            onClick={async () => {
+                              setDownloadingId(u.id);
+                              try {
+                                await downloadOrgFile(u.fileId!, u.fileName);
+                              } catch (err) {
+                                toast({
+                                  title: 'Download failed',
+                                  description: (err as Error).message,
+                                  variant: 'destructive',
+                                });
+                              } finally {
+                                setDownloadingId(null);
+                              }
+                            }}
+                          >
+                            {downloadingId === u.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <Download className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

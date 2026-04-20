@@ -4,6 +4,8 @@ import { mapPortalPoLineItem } from '@/modules/common/utils/portalPoLineItem';
 import { withRefreshRetry } from '@/services/http/interceptors';
 import { memoryTokenStore } from '@/services/storage/memoryTokenStore';
 import type { ApiListResponse } from '@/modules/common/types/api';
+import { mapNetsuiteDocumentPushFromApi } from '@/modules/common/utils/mapNetsuiteDocumentPush';
+import { mapPoUploadFromApi } from '@/modules/common/utils/mapPoUploadFromApi';
 import type { POListItem, PODetail, UploadRecord, UploadValidationResult, VendorUploadRules } from '../types';
 
 const base = '/vendor';
@@ -165,6 +167,9 @@ function coerceVendorPoDetail(raw: Record<string, unknown>): PODetail {
     };
   }
 
+  const uploadsRaw = raw.uploads;
+  const uploads = Array.isArray(uploadsRaw) ? uploadsRaw.map((u) => mapPoUploadFromApi(u)) : undefined;
+
   return {
     id: String(raw.id ?? ''),
     poNumber: String(raw.poNumber ?? raw.po_number ?? ''),
@@ -180,6 +185,7 @@ function coerceVendorPoDetail(raw: Record<string, unknown>): PODetail {
     items,
     requiredDocs,
     ...(uploadRules ? { uploadRules } : {}),
+    ...(uploads?.length ? { uploads } : {}),
     createdAt: String(raw.createdAt ?? raw.created_at ?? ''),
     updatedAt: raw.updatedAt != null ? String(raw.updatedAt) : raw.updated_at != null ? String(raw.updated_at) : undefined,
     netsuiteTransId:
@@ -378,12 +384,14 @@ export async function uploadDocuments(
     form.append('file', file);
     const t = typeMap[type];
     last = await withRefreshRetry(() =>
-      http.post<UploadValidationResult>(`${base}/pos/${poId}/uploads`, form, {
+      http.post<UploadValidationResult & { netsuiteDocumentPush?: unknown }>(`${base}/pos/${poId}/uploads`, form, {
         skipCsrf: false,
         params: { type: t },
       })
     );
     if (!last.success) return last;
+    const ns = mapNetsuiteDocumentPushFromApi(last);
+    if (ns) last = { ...last, netsuiteDocumentPush: ns };
   }
   return last;
 }

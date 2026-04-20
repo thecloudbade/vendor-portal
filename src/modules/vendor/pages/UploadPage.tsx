@@ -21,7 +21,6 @@ import { Download, FileText, Loader2, Upload, ArrowRight } from 'lucide-react';
 import { backToState } from '@/modules/common/utils/navigationState';
 import { ApiError } from '@/services/http/client';
 import type { UploadValidationResult } from '../types';
-import { ValidationParseDebugPanel } from '../components/ValidationParseDebugPanel';
 
 type FileState = { pl: File | null; ci: File | null; coo: File | null };
 
@@ -47,8 +46,6 @@ export function UploadPage() {
   const [templateLoading, setTemplateLoading] = useState<'pl' | 'ci' | null>(null);
   const [validationResult, setValidationResult] = useState<UploadValidationResult | null>(null);
   const [submitErrorDetails, setSubmitErrorDetails] = useState<UploadValidationResult | null>(null);
-  /** Request `validationDebug` on Continue so API returns `data.debug` (PL: plCsvUpload grid + rows). */
-  const [validationDebug, setValidationDebug] = useState(() => import.meta.env.DEV);
 
   const pathIsPortalPoId = !!(poId && isMongoObjectIdString(poId));
 
@@ -80,7 +77,7 @@ export function UploadPage() {
       if (files.ci) list.push({ file: files.ci, type: 'ci' });
       if (files.coo) list.push({ file: files.coo, type: 'coo' });
       if (list.length === 0) throw new Error('Select at least one file');
-      return validateUploadDocuments(poId!, list, { validationDebug });
+      return validateUploadDocuments(poId!, list);
     },
     onMutate: () => setValidateProgress(true),
     onSettled: () => setValidateProgress(false),
@@ -108,7 +105,20 @@ export function UploadPage() {
       queryClient.invalidateQueries({ queryKey: ['vendor', 'uploads'] });
       queryClient.invalidateQueries({ queryKey: ['vendor', 'po', poId] });
       if (result.success) {
-        toast({ title: 'Upload successful', description: result.uploadId ? 'Documents received.' : undefined });
+        const ns = result.netsuiteDocumentPush;
+        let description = result.uploadId ? 'Documents received.' : undefined;
+        if (ns?.status === 'PENDING') {
+          description = [description, 'Sending packing list / invoice to NetSuite in the background…']
+            .filter(Boolean)
+            .join(' ');
+        } else if (ns?.status === 'SENT') {
+          description = [description, 'Synced to NetSuite.'].filter(Boolean).join(' ');
+        } else if (ns?.status === 'FAILED' && ns.message) {
+          description = [description, `NetSuite: ${ns.message}`].filter(Boolean).join(' ');
+        } else if (ns?.status === 'SKIPPED' && ns.message) {
+          description = [description, ns.message].filter(Boolean).join(' ');
+        }
+        toast({ title: 'Upload successful', description });
         setFiles({ pl: null, ci: null, coo: null });
         setValidationResult(null);
         setSubmitErrorDetails(null);
@@ -279,18 +289,6 @@ export function UploadPage() {
             </p>
           )}
 
-          <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={validationDebug}
-              onChange={(e) => setValidationDebug(e.target.checked)}
-            />
-            <span>
-              <span className="font-medium text-foreground">Parse debug</span> (dev)
-            </span>
-          </label>
-
           {(validationResult || submitErrorDetails) && (
             <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
               {validationResult?.success && (
@@ -375,9 +373,6 @@ export function UploadPage() {
                     Adjust the files and run Continue again before Submit.
                   </p>
                 </div>
-              )}
-              {validationResult?.debugByDoc && Object.keys(validationResult.debugByDoc).length > 0 && (
-                <ValidationParseDebugPanel debugByDoc={validationResult.debugByDoc} />
               )}
             </div>
           )}
