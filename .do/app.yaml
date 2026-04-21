@@ -1,0 +1,23 @@
+# DigitalOcean App Platform — static site SPA fallback for React Router (browser history).
+# Apply: doctl apps update <APP_ID> --spec .do/app.yaml
+# After deploy, verify: curl -sI "https://<your-app>.ondigitalocean.app/vendor/upload/<id>" | head -1
+# Expect: HTTP/2 200 (not 404) once catchall is active.
+# Or merge `catchall_document` into your existing spec (export first: doctl apps spec get <APP_ID>).
+#
+# Replace `name`, `region`, and `github` with your app. If the app already exists, prefer
+# exporting the live spec and adding only: catchall_document: index.html under static_sites.
+
+name: vendor-portal
+region: nyc
+
+static_sites:
+  - name: web
+    environment_slug: node-js
+    github:
+      repo: thecloudbade/vendor-portal
+      branch: main
+      deploy_on_push: true
+    build_command: npm ci && npm run build
+    source_dir: /
+    output_dir: dist
+    catchall_document: index.html
