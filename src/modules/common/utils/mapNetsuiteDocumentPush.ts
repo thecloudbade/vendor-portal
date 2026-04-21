@@ -18,6 +18,10 @@ export function mapNetsuiteDocumentPushFromApi(row: unknown): NetsuiteDocumentPu
   if (o.message != null && String(o.message).trim() !== '') out.message = String(o.message);
   if (o.skipReason != null && String(o.skipReason).trim() !== '') out.skipReason = String(o.skipReason);
   if (typeof o.httpStatus === 'number' && Number.isFinite(o.httpStatus)) out.httpStatus = o.httpStatus;
+  if (typeof o.lineUpdateHttpStatus === 'number' && Number.isFinite(o.lineUpdateHttpStatus))
+    out.lineUpdateHttpStatus = o.lineUpdateHttpStatus;
+  if (typeof o.lineUpdateResponseSnippet === 'string' && o.lineUpdateResponseSnippet.trim() !== '')
+    out.lineUpdateResponseSnippet = o.lineUpdateResponseSnippet.trim().slice(0, 2000);
   if (typeof o.sentFileName === 'string' && o.sentFileName.trim() !== '') out.sentFileName = o.sentFileName.trim();
   if (typeof o.netSuiteExternalId === 'string' && o.netSuiteExternalId.trim() !== '')
     out.netSuiteExternalId = o.netSuiteExternalId.trim();

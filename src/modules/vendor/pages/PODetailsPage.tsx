@@ -215,7 +215,7 @@ export function PODetailsPage() {
               Your uploads
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              Submission status and NetSuite sync (when your buyer connects NetSuite).
+              Submission status and NetSuite vendor file upload (when your buyer connects NetSuite).
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">

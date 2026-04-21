@@ -243,8 +243,10 @@ export interface NetSuiteIntegrationStatus {
   typeVendors?: string;
   typePurchaseOrders?: string;
   typePurchaseLineData?: string;
-  /** RESTlet `type` query for POST PL/CI document upload (default purchaseorders). */
+  /** RESTlet `type` query for POST vendor file upload (`vendorfilesupload` body). */
   restletTypeDocumentUpload?: string;
+  /** Optional RESTlet `type` for second POST (`purchase_lines`). Empty = same as document upload. */
+  restletTypeLineUpdate?: string;
   /** NetSuite file cabinet folder internal id for vendor PL/CI PDF uploads. */
   documentUploadFolderId?: number | null;
   documentUploadQueryPage?: string;
@@ -280,6 +282,7 @@ export interface NetSuiteIntegrationPutPayload {
   restletTypePurchaseOrders: string;
   restletTypePurchaseLineData: string;
   restletTypeDocumentUpload?: string;
+  restletTypeLineUpdate?: string;
   /** NetSuite file cabinet folder internal id; send `null` to clear. */
   documentUploadFolderId?: number | null;
   documentUploadQueryPage?: string;

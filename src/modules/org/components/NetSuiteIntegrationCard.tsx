@@ -47,6 +47,7 @@ const putSchema = z.object({
   restletTypePurchaseOrders: z.string().min(1),
   restletTypePurchaseLineData: z.string().min(1),
   restletTypeDocumentUpload: z.string().optional(),
+  restletTypeLineUpdate: z.string().optional(),
   documentUploadFolderId: z.string().optional(),
   documentUploadQueryPage: z.string().optional(),
   documentUploadQueryLimit: z.string().optional(),
@@ -98,7 +99,8 @@ export function NetSuiteIntegrationCard() {
       restletTypeVendors: 'vendors',
       restletTypePurchaseOrders: 'purchaseorders',
       restletTypePurchaseLineData: 'purchaseLineData',
-      restletTypeDocumentUpload: 'purchaseorders',
+      restletTypeDocumentUpload: 'vendorfilesupload',
+      restletTypeLineUpdate: '',
       documentUploadFolderId: '',
       documentUploadQueryPage: '1',
       documentUploadQueryLimit: '100',
@@ -119,7 +121,8 @@ export function NetSuiteIntegrationCard() {
       restletTypeVendors: status.typeVendors ?? 'vendors',
       restletTypePurchaseOrders: status.typePurchaseOrders ?? 'purchaseorders',
       restletTypePurchaseLineData: status.typePurchaseLineData ?? 'purchaseLineData',
-      restletTypeDocumentUpload: status.restletTypeDocumentUpload ?? 'purchaseorders',
+      restletTypeDocumentUpload: status.restletTypeDocumentUpload ?? 'vendorfilesupload',
+      restletTypeLineUpdate: status.restletTypeLineUpdate ?? '',
       documentUploadFolderId:
         status.documentUploadFolderId != null && Number.isFinite(Number(status.documentUploadFolderId))
           ? String(status.documentUploadFolderId)
@@ -156,6 +159,8 @@ export function NetSuiteIntegrationCard() {
       }
       const docType = (payload.restletTypeDocumentUpload ?? '').trim();
       if (docType) body.restletTypeDocumentUpload = docType;
+      const lineType = (payload.restletTypeLineUpdate ?? '').trim();
+      body.restletTypeLineUpdate = lineType;
       const dqPage = (payload.documentUploadQueryPage ?? '').trim();
       if (dqPage) body.documentUploadQueryPage = dqPage;
       const dqLimit = (payload.documentUploadQueryLimit ?? '').trim();
@@ -402,10 +407,12 @@ export function NetSuiteIntegrationCard() {
             </div>
           </div>
           <div className="space-y-3 rounded-lg border border-dashed border-border/80 bg-muted/10 p-4">
-            <p className="text-sm font-medium">Vendor PL/CI → NetSuite</p>
+            <p className="text-sm font-medium">Vendor files → NetSuite</p>
             <p className="text-xs text-muted-foreground">
-              Required for sending packing lists and commercial invoices to NetSuite after upload. Use the{' '}
-              <strong>internal id</strong> of a File Cabinet folder in NetSuite (often visible in the folder URL or list).
+              After upload, the API POSTs a <code className="rounded bg-muted px-1">vendorfilesupload</code> JSON body with a{' '}
+              <code className="rounded bg-muted px-1">files</code> array (PDF per validated packing list or commercial invoice).
+              Your RESTlet should read that body. Set the{' '}
+              <strong>internal id</strong> of the File Cabinet folder files attach to (often in the folder URL or list).
             </p>
             <div>
               <Label htmlFor="ns-doc-folder">File cabinet folder internal ID</Label>
@@ -420,15 +427,30 @@ export function NetSuiteIntegrationCard() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="ns-doc-type">RESTlet type (document POST)</Label>
+                <Label htmlFor="ns-doc-type">RESTlet type (document POST query)</Label>
                 <Input
                   id="ns-doc-type"
                   {...form.register('restletTypeDocumentUpload')}
                   className="mt-1"
-                  placeholder="purchaseorders"
+                  placeholder="vendorfilesupload"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:col-span-1">
+              <div>
+                <Label htmlFor="ns-line-type">RESTlet type (line qty POST, optional)</Label>
+                <Input
+                  id="ns-line-type"
+                  {...form.register('restletTypeLineUpdate')}
+                  className="mt-1"
+                  placeholder="Same as document if empty"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Second POST uses <code className="rounded bg-muted px-0.5">packinglistupdate</code> /{' '}
+                  <code className="rounded bg-muted px-0.5">commercialinvoiceupdate</code> with{' '}
+                  <code className="rounded bg-muted px-0.5">purchase_lines</code>. Leave blank to use the same{' '}
+                  <code className="rounded bg-muted px-0.5">type=</code> as the file upload.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:max-w-md">
                 <div>
                   <Label htmlFor="ns-doc-page">Query page</Label>
                   <Input id="ns-doc-page" {...form.register('documentUploadQueryPage')} className="mt-1" placeholder="1" />

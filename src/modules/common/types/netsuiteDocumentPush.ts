@@ -8,9 +8,12 @@ export interface NetsuiteDocumentPushSummary {
   message?: string;
   skipReason?: string;
   httpStatus?: number;
+  /** HTTP status from the optional NetSuite line-quantity POST (when run). */
+  lineUpdateHttpStatus?: number;
+  lineUpdateResponseSnippet?: string;
   /** PDF filename sent to NetSuite (when applicable). */
   sentFileName?: string;
-  /** Idempotency key sent to NetSuite (VP-…). */
+  /** External id on the file entry sent to NetSuite (e.g. PLPDF-… / CIPDF-…). */
   netSuiteExternalId?: string;
   /** File id for the PDF bytes sent / stored (CSV/XLSX→PDF copy). */
   netSuitePdfFileId?: string;

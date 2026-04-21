@@ -108,11 +108,11 @@ export function UploadPage() {
         const ns = result.netsuiteDocumentPush;
         let description = result.uploadId ? 'Documents received.' : undefined;
         if (ns?.status === 'PENDING') {
-          description = [description, 'Sending packing list / invoice to NetSuite in the background…']
+          description = [description, 'Sending vendor file(s) to NetSuite in the background…']
             .filter(Boolean)
             .join(' ');
         } else if (ns?.status === 'SENT') {
-          description = [description, 'Synced to NetSuite.'].filter(Boolean).join(' ');
+          description = [description, 'Vendor file(s) synced to NetSuite.'].filter(Boolean).join(' ');
         } else if (ns?.status === 'FAILED' && ns.message) {
           description = [description, `NetSuite: ${ns.message}`].filter(Boolean).join(' ');
         } else if (ns?.status === 'SKIPPED' && ns.message) {

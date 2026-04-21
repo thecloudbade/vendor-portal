@@ -35,12 +35,12 @@ export function NetSuiteDocumentPushStatus({ push, className, compact }: Props) 
   const pdfName = push.sentFileName?.trim() || 'document.pdf';
   const pdfLabel =
     push.status === 'SENT'
-      ? 'PDF sent to NetSuite'
+      ? 'File sent to NetSuite'
       : push.status === 'FAILED'
         ? 'Download PDF copy'
         : push.status === 'PENDING'
           ? 'Download PDF'
-          : 'PDF for NetSuite';
+          : 'File for NetSuite';
   return (
     <div className={cn('inline-flex max-w-[min(100%,20rem)] flex-col gap-0.5 rounded-md px-2 py-1 text-xs font-medium', tone, className)}>
       <span>{label}</span>
@@ -50,13 +50,21 @@ export function NetSuiteDocumentPushStatus({ push, className, compact }: Props) 
         </span>
       ) : null}
       {push.sentFileName ? (
-        <span className="font-normal text-[11px] leading-snug opacity-90" title="Filename sent to NetSuite">
+        <span className="font-normal text-[11px] leading-snug opacity-90" title="Filename in vendorfilesupload payload">
           File: {push.sentFileName}
         </span>
       ) : null}
       {push.netSuiteExternalId ? (
         <span className="font-normal text-[10px] leading-snug opacity-75 font-mono" title="NetSuite request id">
           {push.netSuiteExternalId}
+        </span>
+      ) : null}
+      {push.lineUpdateHttpStatus != null ? (
+        <span
+          className="font-normal text-[10px] leading-snug opacity-75"
+          title={push.lineUpdateResponseSnippet ?? 'Line quantity POST response'}
+        >
+          Line update HTTP {push.lineUpdateHttpStatus}
         </span>
       ) : null}
       {pdfId && push.status !== 'SKIPPED' ? (
