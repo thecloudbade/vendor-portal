@@ -50,7 +50,7 @@ export function NetSuiteDocumentPushStatus({ push, className, compact }: Props) 
         </span>
       ) : null}
       {push.sentFileName ? (
-        <span className="font-normal text-[11px] leading-snug opacity-90" title="Filename in vendorfilesupload payload">
+        <span className="font-normal text-[11px] leading-snug opacity-90" title="Filename sent in the NetSuite PL/CI request">
           File: {push.sentFileName}
         </span>
       ) : null}

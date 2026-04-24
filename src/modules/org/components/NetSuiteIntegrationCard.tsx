@@ -409,10 +409,14 @@ export function NetSuiteIntegrationCard() {
           <div className="space-y-3 rounded-lg border border-dashed border-border/80 bg-muted/10 p-4">
             <p className="text-sm font-medium">Vendor files → NetSuite</p>
             <p className="text-xs text-muted-foreground">
-              After upload, the API POSTs a <code className="rounded bg-muted px-1">vendorfilesupload</code> JSON body with a{' '}
-              <code className="rounded bg-muted px-1">files</code> array (PDF per validated packing list or commercial invoice).
-              Your RESTlet should read that body. Set the{' '}
-              <strong>internal id</strong> of the File Cabinet folder files attach to (often in the folder URL or list).
+              After upload, the API sends a <code className="rounded bg-muted px-1">vendorfilesupload</code> POST with a{' '}
+              <code className="rounded bg-muted px-0.5">files</code> array (PDF metadata + base64). When line quantities
+              were validated, it then POSTs <code className="rounded bg-muted px-1">packinglistupdate</code> with{' '}
+              <code className="rounded bg-muted px-0.5">packingLines</code> (PL) or{' '}
+              <code className="rounded bg-muted px-0.5">commercialLines</code> (CI). Use the two RESTlet type fields below
+              for each query <code className="rounded bg-muted px-0.5">type=</code> (or leave line type empty to default to{' '}
+              <code className="rounded bg-muted px-0.5">packinglistupdate</code>). Set the file cabinet folder{' '}
+              <strong>internal id</strong> for uploads.
             </p>
             <div>
               <Label htmlFor="ns-doc-folder">File cabinet folder internal ID</Label>
@@ -427,27 +431,26 @@ export function NetSuiteIntegrationCard() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="ns-doc-type">RESTlet type (document POST query)</Label>
+                <Label htmlFor="ns-doc-type">RESTlet type (file upload POST)</Label>
                 <Input
                   id="ns-doc-type"
                   {...form.register('restletTypeDocumentUpload')}
                   className="mt-1"
-                  placeholder="vendorfilesupload"
+                  placeholder="e.g. vendorfilesupload"
                 />
               </div>
               <div>
-                <Label htmlFor="ns-line-type">RESTlet type (line qty POST, optional)</Label>
+                <Label htmlFor="ns-line-type">RESTlet type (line update POST)</Label>
                 <Input
                   id="ns-line-type"
                   {...form.register('restletTypeLineUpdate')}
                   className="mt-1"
-                  placeholder="Same as document if empty"
+                  placeholder="Blank → packinglistupdate"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Second POST uses <code className="rounded bg-muted px-0.5">packinglistupdate</code> /{' '}
-                  <code className="rounded bg-muted px-0.5">commercialinvoiceupdate</code> with{' '}
-                  <code className="rounded bg-muted px-0.5">purchase_lines</code>. Leave blank to use the same{' '}
-                  <code className="rounded bg-muted px-0.5">type=</code> as the file upload.
+                  Second POST sends JSON <code className="rounded bg-muted px-0.5">packinglistupdate</code> with line
+                  arrays. Override the query <code className="rounded bg-muted px-0.5">type=</code> here if your script uses
+                  a different branch name.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:max-w-md">
