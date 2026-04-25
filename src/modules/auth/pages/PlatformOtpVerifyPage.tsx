@@ -7,12 +7,14 @@ import { verifyPlatformOtp } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
+import { shouldShowOtpInClientUi } from '../utils/otpDisplayPolicy';
 import { OtpInput } from '../components/OtpInput';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { AuthPageShell } from '../components/AuthPageShell';
-import { ArrowLeft, ArrowRight, KeyRound, Mail } from 'lucide-react';
+import { VendorFlowLogo } from '../components/VendorFlowLogo';
+import { ArrowLeft, ArrowRight, Mail } from 'lucide-react';
 
 const schema = z.object({
   otp: z.string().length(6, 'Enter 6 digits').regex(/^\d{6}$/, 'OTP must be 6 digits'),
@@ -70,26 +72,22 @@ export function PlatformOtpVerifyPage() {
     }
   };
 
-  if (!email) return null;
-
   const devOtp =
-    import.meta.env.DEV && location.state && typeof location.state === 'object' && location.state !== null
+    shouldShowOtpInClientUi() && location.state && typeof location.state === 'object' && location.state !== null
       ? (location.state as { devOtp?: string }).devOtp
       : undefined;
+
+  if (!email) return null;
 
   const backHref = `${ROUTES.PLATFORM.LOGIN}${
     searchParams.get('returnUrl') ? `?returnUrl=${encodeURIComponent(searchParams.get('returnUrl') ?? '')}` : ''
   }`;
 
   return (
-    <AuthPageShell>
+    <AuthPageShell pageTitle="Platform verify" variant="platform">
       <div className="w-full max-w-[440px] animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-10 flex flex-col items-center text-center">
-          <div className="relative mb-8">
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-violet-500/20 bg-card shadow-lg">
-              <KeyRound className="relative h-8 w-8 text-violet-600" strokeWidth={1.6} aria-hidden />
-            </div>
-          </div>
+          <VendorFlowLogo size="md" variant="platform" className="mb-6" />
 
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-600">
             Platform operator
@@ -112,16 +110,19 @@ export function PlatformOtpVerifyPage() {
             <CardDescription className="text-[13px]">Enter the 6-digit code to open the platform console.</CardDescription>
           </CardHeader>
           <CardContent className="px-7 pb-8 pt-4 sm:px-9 sm:pb-9">
-            {import.meta.env.DEV && devOtp ? (
+            {devOtp ? (
               <div
                 className="mb-6 rounded-xl border border-dashed border-violet-500/50 bg-violet-500/10 px-4 py-3 text-center dark:bg-violet-500/15"
                 role="status"
-                aria-label="Development OTP"
+                aria-label="One-time code preview"
               >
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-900 dark:text-violet-200">
-                  Dev — OTP
+                  Code preview
                 </p>
-                <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
+                <p className="mt-1.5 text-[11px] text-violet-900/85 dark:text-violet-200/90">
+                  When the API returns the code (dev or VITE_SHOW_OTP_IN_UI).
+                </p>
+                <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
               </div>
             ) : null}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

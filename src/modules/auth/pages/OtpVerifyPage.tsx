@@ -9,6 +9,7 @@ import {
   resendMfaOtp,
   verifyOtp,
 } from '../api/auth.api';
+import { shouldShowOtpInClientUi, takeOtpFromResponseForClientUi } from '../utils/otpDisplayPolicy';
 import { useAuth } from '../hooks/useAuth';
 import { ROUTES, portalHomeForUserType } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
@@ -17,7 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { AuthPageShell } from '../components/AuthPageShell';
-import { ArrowLeft, ArrowRight, KeyRound, Mail } from 'lucide-react';
+import { VendorFlowLogo } from '../components/VendorFlowLogo';
+import { ArrowLeft, ArrowRight, Mail } from 'lucide-react';
 
 const schema = z.object({
   otp: z.string().length(6, 'Enter 6 digits').regex(/^\d{6}$/, 'OTP must be 6 digits'),
@@ -34,6 +36,7 @@ export function OtpVerifyPage() {
   const email = searchParams.get('email') ?? '';
 
   const [otpValue, setOtpValue] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
 
   const {
     handleSubmit,
@@ -86,14 +89,10 @@ export function OtpVerifyPage() {
     }
   };
 
-  if (!email) return null;
-
   const devOtp =
-    import.meta.env.DEV && location.state && typeof location.state === 'object' && location.state !== null
+    shouldShowOtpInClientUi() && location.state && typeof location.state === 'object' && location.state !== null
       ? (location.state as { devOtp?: string }).devOtp
       : undefined;
-
-  const [resendBusy, setResendBusy] = useState(false);
 
   const handleResend = async () => {
     let mfaToken: string | null = null;
@@ -106,17 +105,20 @@ export function OtpVerifyPage() {
     try {
       if (mfaToken) {
         const r = await resendMfaOtp(mfaToken);
-        if (import.meta.env.DEV && r.otp) {
-          toast({
-            title: 'Code sent (dev)',
-            description: `New OTP: ${r.otp}`,
-          });
+        const reveal = takeOtpFromResponseForClientUi(r);
+        if (reveal) {
+          toast({ title: 'Code sent (preview)', description: `OTP: ${reveal}` });
         } else {
           toast({ title: 'Code sent', description: 'Check your email for a new code.' });
         }
       } else {
-        await requestOtp({ email });
-        toast({ title: 'Code sent', description: 'Check your email for a new code.' });
+        const r = await requestOtp({ email });
+        const reveal = takeOtpFromResponseForClientUi(r);
+        if (reveal) {
+          toast({ title: 'Code sent (preview)', description: `OTP: ${reveal}` });
+        } else {
+          toast({ title: 'Code sent', description: 'Check your email for a new code.' });
+        }
       }
     } catch (e) {
       toast({
@@ -129,24 +131,17 @@ export function OtpVerifyPage() {
     }
   };
 
+  if (!email) return null;
+
   const backHref = `${ROUTES.LOGIN}${
     searchParams.get('returnUrl') ? `?returnUrl=${encodeURIComponent(searchParams.get('returnUrl') ?? '')}` : ''
   }`;
 
   return (
-    <AuthPageShell>
+    <AuthPageShell pageTitle="Verify code">
       <div className="w-full max-w-[440px] animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-10 flex flex-col items-center text-center">
-          <div className="relative mb-8">
-            <div
-              className="absolute -inset-3 rounded-[1.35rem] bg-gradient-to-br from-primary/25 via-primary/5 to-transparent opacity-80 blur-xl dark:from-primary/35 dark:via-primary/10"
-              aria-hidden
-            />
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/15 bg-gradient-to-br from-card to-card/80 shadow-[0_8px_30px_-8px_hsl(var(--primary)/0.35),0_0_0_1px_hsl(var(--primary)/0.08)] ring-1 ring-black/[0.04] dark:from-card dark:to-card/90 dark:ring-white/[0.06]">
-              <div className="absolute inset-[1px] rounded-[0.9rem] bg-gradient-to-br from-primary/[0.12] to-transparent dark:from-primary/20" />
-              <KeyRound className="relative h-8 w-8 text-primary" strokeWidth={1.6} aria-hidden />
-            </div>
-          </div>
+          <VendorFlowLogo size="md" className="mb-6" />
 
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/90 dark:text-primary/80">
             Almost there
@@ -180,16 +175,19 @@ export function OtpVerifyPage() {
               <CardDescription className="text-[13px] leading-relaxed text-muted-foreground">Enter the code from your email.</CardDescription>
             </CardHeader>
             <CardContent className="px-7 pb-8 pt-4 sm:px-9 sm:pb-9">
-              {import.meta.env.DEV && devOtp ? (
+              {devOtp ? (
                 <div
                   className="mb-6 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/10 px-4 py-3 text-center dark:bg-amber-500/15"
                   role="status"
-                  aria-label="Development OTP"
+                  aria-label="One-time code preview"
                 >
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-900 dark:text-amber-200">
-                    Dev — OTP
+                    Code preview
                   </p>
-                  <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
+                  <p className="mt-1.5 text-[11px] text-amber-800/90 dark:text-amber-200/90">
+                    Shown when the server returns the code (local dev, or VITE_SHOW_OTP_IN_UI).
+                  </p>
+                  <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">{devOtp}</p>
                 </div>
               ) : null}
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

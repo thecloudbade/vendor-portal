@@ -1,4 +1,5 @@
 import { DashboardShell, type ShellNavItem } from './DashboardShell';
+import { APP_NAME } from '@/modules/common/constants/branding';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { canInviteVendorUsers, canManageSettings, canViewAudit } from '@/modules/common/constants/roles';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
@@ -22,7 +23,7 @@ export function OrgLayout() {
       <DashboardShell
         variant="org"
         homePath={ROUTES.ORG.DASHBOARD}
-        brandTitle="Vendor Portal"
+        brandTitle={APP_NAME}
         brandBadge="Organization"
         navItems={nav}
         floatingSlot={showOnboarding ? <OrgOnboardingFloatingTrigger /> : undefined}

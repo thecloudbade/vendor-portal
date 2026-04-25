@@ -5,12 +5,15 @@ import { z } from 'zod';
 import { requestPlatformOtp } from '../api/auth.api';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { validateReturnUrl } from '@/services/security/sanitize';
+import { takeOtpFromResponseForClientUi } from '../utils/otpDisplayPolicy';
+import { APP_NAME } from '@/modules/common/constants/branding';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { AuthPageShell } from '../components/AuthPageShell';
-import { ArrowRight, Lock, Mail, Shield } from 'lucide-react';
+import { VendorFlowLogo } from '../components/VendorFlowLogo';
+import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const schema = z.object({
@@ -37,10 +40,7 @@ export function PlatformLoginPage() {
     try {
       const res = await requestPlatformOtp({ email: data.email });
       const returnUrl = validateReturnUrl(new URLSearchParams(location.search).get('returnUrl'));
-      const devOtp =
-        import.meta.env.DEV && res.otp != null && String(res.otp).trim() !== ''
-          ? String(res.otp).trim()
-          : undefined;
+      const devOtp = takeOtpFromResponseForClientUi(res);
       navigate(
         `${ROUTES.PLATFORM.VERIFY_OTP}?email=${encodeURIComponent(data.email)}${
           returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''
@@ -57,27 +57,19 @@ export function PlatformLoginPage() {
   };
 
   return (
-    <AuthPageShell>
+    <AuthPageShell pageTitle="Platform sign-in" variant="platform">
       <div className="w-full max-w-[440px] animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-10 flex flex-col items-center text-center">
-          <div className="relative mb-8">
-            <div
-              className="absolute -inset-3 rounded-[1.35rem] bg-gradient-to-br from-violet-500/25 via-violet-500/5 to-transparent opacity-80 blur-xl"
-              aria-hidden
-            />
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-violet-500/20 bg-gradient-to-br from-card to-card/80 shadow-lg ring-1 ring-black/[0.04]">
-              <Shield className="relative h-8 w-8 text-violet-600 dark:text-violet-400" strokeWidth={1.6} aria-hidden />
-            </div>
-          </div>
+          <VendorFlowLogo size="lg" variant="platform" className="mb-7" />
 
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
-            Platform operator
+            {APP_NAME} · platform
           </p>
           <h1 className="bg-gradient-to-br from-foreground via-foreground to-muted-foreground/90 bg-clip-text text-3xl font-semibold tracking-tight text-transparent sm:text-[2rem] sm:leading-tight">
-            Superadmin sign-in
+            Superadmin
           </h1>
           <p className="mt-3 max-w-[340px] text-[15px] leading-relaxed text-muted-foreground">
-            OTP is sent only to your seeded platform account. Do not use org or vendor login here.
+            One-time code to your platform operator email. Not for org or vendor users.
           </p>
         </div>
 

@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { logout } from '@/modules/auth/api/auth.api';
+import { APP_NAME } from '@/modules/common/constants/branding';
 import { ROUTES, PLATFORM_BASE } from '@/modules/common/constants/routes';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, LogOut } from 'lucide-react';
@@ -22,10 +23,10 @@ export function PlatformLayout() {
       <aside className="fixed bottom-0 left-0 top-0 z-50 flex w-[min(17rem,88vw)] flex-col border-r border-slate-800 bg-slate-950 p-4 text-slate-200 md:w-[17.5rem]">
         <div className="mb-8 flex items-center gap-2 px-1">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-lg shadow-violet-600/25">
-            VP
+            VF
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold tracking-tight text-white">Vendor Portal</p>
+            <p className="truncate text-sm font-semibold tracking-tight text-white">{APP_NAME}</p>
             <span className="mt-0.5 inline-flex rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-200 ring-1 ring-violet-400/20">
               Platform
             </span>

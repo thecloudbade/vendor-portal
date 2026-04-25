@@ -1,4 +1,5 @@
 import { DashboardShell, type ShellNavItem } from './DashboardShell';
+import { APP_NAME } from '@/modules/common/constants/branding';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { LayoutDashboard, Search, History } from 'lucide-react';
 
@@ -19,8 +20,8 @@ export function VendorLayout() {
     <DashboardShell
       variant="vendor"
       homePath={ROUTES.VENDOR.DASHBOARD}
-      brandTitle="Supplier workspace"
-      brandBadge="Vendor"
+      brandTitle={APP_NAME}
+      brandBadge="Supplier"
       navItems={nav}
       profilePath={ROUTES.VENDOR.PROFILE}
     />
