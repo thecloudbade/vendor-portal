@@ -1,0 +1,2 @@
+# SPA: serve index.html for client-side routes (e.g. Netlify; some static hosts)
+/*    /index.html   200

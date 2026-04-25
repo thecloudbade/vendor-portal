@@ -23,6 +23,7 @@ export function PODetailsPage() {
   const { toast } = useToast();
   const { poId } = useParams<{ poId: string }>();
   const [templateLoading, setTemplateLoading] = useState<'pl' | 'ci' | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const validPortalId = !!(poId && isMongoObjectIdString(poId));
 
@@ -37,6 +38,13 @@ export function PODetailsPage() {
       return pending ? 5000 : false;
     },
   });
+
+  const docAccess = useMemo(() => {
+    if (po == null) {
+      return { allowed: true as const, reason: undefined as string | undefined };
+    }
+    return getVendorDocumentUploadAccess(po);
+  }, [po]);
 
   if (!poId) return null;
 
@@ -80,8 +88,6 @@ export function PODetailsPage() {
 
   const items = po.items ?? [];
   const uploads = po.uploads ?? [];
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const docAccess = useMemo(() => getVendorDocumentUploadAccess(po), [po]);
 
   const poHeaderMeta = (
     <div className="space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm md:p-5">

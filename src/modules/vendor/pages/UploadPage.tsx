@@ -56,6 +56,13 @@ export function UploadPage() {
     enabled: !!poId && pathIsPortalPoId,
   });
 
+  const docAccess = useMemo(() => {
+    if (po == null) {
+      return { allowed: true as const, reason: undefined as string | undefined };
+    }
+    return getVendorDocumentUploadAccess(po);
+  }, [po]);
+
   const blockSubmit = po?.uploadRules?.blockSubmitOnQtyToleranceExceeded !== false;
 
   const resetValidation = useCallback(() => {
@@ -203,7 +210,6 @@ export function UploadPage() {
     );
   }
 
-  const docAccess = useMemo(() => getVendorDocumentUploadAccess(po), [po]);
   if (!docAccess.allowed) {
     return (
       <div className="space-y-4">
