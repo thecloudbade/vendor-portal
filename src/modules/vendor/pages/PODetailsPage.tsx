@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getVendorPODetail, downloadPLTemplate, downloadCITemplate } from '../api/vendor.api';
 import { downloadOrgFile } from '@/modules/org/api/org.api';
@@ -16,6 +16,8 @@ import { Download, FileText, ListOrdered, Loader2, PackageOpen, Paperclip, Uploa
 import { VendorPoBackLink } from '../components/VendorPoBackLink';
 import { isMongoObjectIdString } from '@/modules/common/utils/mongoId';
 import { useToast } from '@/components/ui/use-toast';
+import { getVendorDocumentUploadAccess } from '@/modules/common/utils/vendorPoDocumentUploadAccess';
+import { cn } from '@/lib/utils';
 
 export function PODetailsPage() {
   const { toast } = useToast();
@@ -79,6 +81,7 @@ export function PODetailsPage() {
   const items = po.items ?? [];
   const uploads = po.uploads ?? [];
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const docAccess = useMemo(() => getVendorDocumentUploadAccess(po), [po]);
 
   const poHeaderMeta = (
     <div className="space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm md:p-5">
@@ -139,12 +142,24 @@ export function PODetailsPage() {
         title={po.poNumber}
         description={poHeaderMeta}
         actions={
-          <Button asChild>
-            <Link to={ROUTES.VENDOR.UPLOAD(po.id)}>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload documents
-            </Link>
-          </Button>
+          docAccess.allowed ? (
+            <Button asChild>
+              <Link to={ROUTES.VENDOR.UPLOAD(po.id)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload documents
+              </Link>
+            </Button>
+          ) : (
+            <p
+              className={cn(
+                'max-w-md text-right text-sm text-muted-foreground',
+                'border border-amber-200/80 bg-amber-50/50 px-3 py-2 text-left dark:border-amber-900/50 dark:bg-amber-950/30'
+              )}
+              title={docAccess.reason}
+            >
+              {docAccess.reason}
+            </p>
+          )
         }
       />
 

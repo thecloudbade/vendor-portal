@@ -22,15 +22,21 @@ const profileSchema = z.object({
 export type OrgProfileFormValues = z.infer<typeof profileSchema>;
 
 function valuesFromOrg(org: OrgMe | undefined): OrgProfileFormValues {
-  const a = org?.address;
+  const raw = org?.address;
+  const a =
+    typeof raw === 'string'
+      ? { line1: raw }
+      : raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? raw
+        : {};
   return {
     name: org?.name ?? '',
     timezone: org?.timezone ?? 'UTC',
-    line1: a?.line1 ?? '',
-    city: a?.city ?? '',
-    region: a?.region ?? '',
-    postalCode: a?.postalCode ?? '',
-    country: a?.country ?? '',
+    line1: 'line1' in a && a.line1 != null ? String(a.line1) : '',
+    city: 'city' in a && a.city != null ? String(a.city) : '',
+    region: 'region' in a && a.region != null ? String(a.region) : '',
+    postalCode: 'postalCode' in a && a.postalCode != null ? String(a.postalCode) : '',
+    country: 'country' in a && a.country != null ? String(a.country) : '',
   };
 }
 

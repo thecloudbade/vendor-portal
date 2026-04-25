@@ -4,6 +4,7 @@ import type {
   CreatePlatformOrganizationPayload,
   InviteOrgAdminPayload,
   InviteOrgAdminResult,
+  PlatformNetsuiteRestletTypesPayload,
   PlatformOrgDetail,
   PlatformOrgListItem,
   PlatformOrganizationsResult,
@@ -15,12 +16,21 @@ function asRecord(raw: unknown): Record<string, unknown> {
 
 function mapOrgRow(raw: Record<string, unknown>): PlatformOrgListItem {
   const metricsRaw = raw.metrics;
+  const addr = raw.address;
+  const addressStr =
+    typeof addr === 'string'
+      ? addr
+      : addr && typeof addr === 'object' && !Array.isArray(addr)
+        ? JSON.stringify(addr)
+        : addr != null
+          ? String(addr)
+          : undefined;
   return {
     id: String(raw.id ?? ''),
     name: String(raw.name ?? ''),
     status: raw.status != null ? String(raw.status) : undefined,
     timezone: raw.timezone != null ? String(raw.timezone) : undefined,
-    address: raw.address != null ? String(raw.address) : undefined,
+    address: addressStr,
     createdAt: raw.createdAt != null ? String(raw.createdAt) : undefined,
     metrics:
       metricsRaw && typeof metricsRaw === 'object' && !Array.isArray(metricsRaw)
@@ -68,9 +78,15 @@ export async function getPlatformOrganization(orgId: string) {
       const o = asRecord(raw);
       const inner = o.data && typeof o.data === 'object' ? asRecord(o.data) : o;
       const base = mapOrgRow(inner);
+      const pns = inner.platformNetsuiteRestletTypes;
+      const platformNetsuiteRestletTypes =
+        pns && typeof pns === 'object' && !Array.isArray(pns)
+          ? (pns as PlatformNetsuiteRestletTypesPayload)
+          : null;
       const detail: PlatformOrgDetail = {
         ...base,
         updatedAt: inner.updatedAt != null ? String(inner.updatedAt) : undefined,
+        platformNetsuiteRestletTypes,
       };
       return detail;
     })
@@ -92,6 +108,33 @@ export async function inviteOrgAdmin(orgId: string, payload: InviteOrgAdminPaylo
           signupUrl: inner.signupUrl != null ? String(inner.signupUrl) : undefined,
         };
         return result;
+      })
+  );
+}
+
+/** PUT /platform/organizations/:orgId/netsuite-restlet-types — SUPERADMIN */
+export async function putPlatformOrganizationNetSuiteRestletTypes(
+  orgId: string,
+  payload: PlatformNetsuiteRestletTypesPayload
+) {
+  return withRefreshRetry(() =>
+    http
+      .put<unknown>(`/platform/organizations/${encodeURIComponent(orgId)}/netsuite-restlet-types`, payload)
+      .then((raw) => {
+        const o = asRecord(raw);
+        const inner = o.data && typeof o.data === 'object' ? asRecord(o.data) : o;
+        const base = mapOrgRow(inner);
+        const pns = inner.platformNetsuiteRestletTypes;
+        const platformNetsuiteRestletTypes =
+          pns && typeof pns === 'object' && !Array.isArray(pns)
+            ? (pns as PlatformNetsuiteRestletTypesPayload)
+            : null;
+        const detail: PlatformOrgDetail = {
+          ...base,
+          updatedAt: inner.updatedAt != null ? String(inner.updatedAt) : undefined,
+          platformNetsuiteRestletTypes,
+        };
+        return detail;
       })
   );
 }

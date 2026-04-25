@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   activateDocumentTemplate,
@@ -18,9 +18,9 @@ import type {
   CsvPackingListLayout,
   DetectedTemplateField,
   DocumentTemplateKind,
-  MappableFieldsCatalog,
   PackingListLayout,
   PackingListTotalKey,
+  POListItem,
 } from '../types';
 import { PACKING_LIST_TOTAL_KEYS } from '../types';
 import {
@@ -29,26 +29,26 @@ import {
   validateCsvPackingListLayout,
 } from '../utils/csvPackingListLayout';
 import {
+  catalogPathOptions,
+  mergeCatalogWithStaticPresets,
+  nextUnmappedCatalogPath,
+} from '../utils/documentTemplateMappableFields';
+import {
   emptyPackingListLayout,
-  MAPPABLE_STATIC_PREFIXES,
   packingListTotalLabel,
   sanitizePackingListLayout,
   validatePackingListLayout,
 } from '../utils/packingListLayout';
+import { MappablePathCombobox } from './MappablePathCombobox';
+import { useDebounce } from '@/modules/common/hooks/useDebounce';
+import { ROUTES } from '@/modules/common/constants/routes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,6 +61,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 import {
   FileSpreadsheet,
   Loader2,
@@ -69,12 +70,14 @@ import {
   Upload,
   Download,
   CheckCircle2,
+  ChevronsUpDown,
   Pencil,
   Search,
   LayoutGrid,
   Play,
   Archive,
   Link2,
+  RotateCw,
 } from 'lucide-react';
 
 const KIND_LABEL: Record<DocumentTemplateKind, string> = {
@@ -82,22 +85,174 @@ const KIND_LABEL: Record<DocumentTemplateKind, string> = {
   COMMERCIAL_INVOICE: 'Commercial invoice',
 };
 
-const CATALOG_GROUPS: { key: keyof MappableFieldsCatalog; label: string }[] = [
-  { key: 'organization', label: 'Organization' },
-  { key: 'purchaseOrder', label: 'Purchase order' },
-  { key: 'vendor', label: 'Vendor' },
-  { key: 'line', label: 'Line' },
-];
+function triggerDownloadFile(blob: Blob, downloadName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = downloadName;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
-function catalogPathOptions(catalog: MappableFieldsCatalog | undefined): { path: string; label: string; group: string }[] {
-  if (!catalog) return [];
-  const out: { path: string; label: string; group: string }[] = [];
-  for (const g of CATALOG_GROUPS) {
-    for (const e of catalog[g.key]) {
-      out.push({ path: e.path, label: e.label || e.path, group: g.label });
-    }
-  }
-  return out;
+function TemplatePreviewPoPicker({
+  pos,
+  value,
+  onChange,
+  search,
+  onSearchChange,
+  loading,
+  refreshing,
+  onRefresh,
+}: {
+  pos: POListItem[];
+  value: string;
+  onChange: (id: string) => void;
+  search: string;
+  onSearchChange: (q: string) => void;
+  loading: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [localQ, setLocalQ] = useState('');
+  const selected = useMemo(() => pos.find((p) => p.id === value), [pos, value]);
+  const filtered = useMemo(() => {
+    const q = localQ.trim().toLowerCase();
+    if (!q) return pos;
+    return pos.filter(
+      (p) =>
+        p.poNumber.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q) ||
+        (p.vendorName && p.vendorName.toLowerCase().includes(q))
+    );
+  }, [pos, localQ]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1 space-y-1">
+          <Label htmlFor="template-preview-po-search">Search purchase orders</Label>
+          <div className="flex gap-2">
+            <Input
+              id="template-preview-po-search"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="PO #, vendor name, or id…"
+              className="font-mono text-sm"
+              autoComplete="off"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              title="Refresh list"
+              onClick={() => onRefresh()}
+              disabled={loading || refreshing}
+            >
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label>Choose PO for preview</Label>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className="h-auto min-h-9 w-full justify-between py-1.5 text-left font-normal"
+            >
+              <span className="min-w-0 flex-1">
+                {selected ? (
+                  <span className="block truncate">
+                    <span className="font-medium text-foreground">{selected.poNumber}</span>
+                    {selected.vendorName ? (
+                      <span className="text-muted-foreground"> — {selected.vendorName}</span>
+                    ) : null}
+                  </span>
+                ) : value.trim() ? (
+                  <span className="block truncate font-mono text-xs text-foreground" title={value}>
+                    {value.slice(0, 8)}…{value.length > 12 ? ` (${value.length} chars)` : ''} (use list or paste id below)
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Select a PO from the list…</span>
+                )}
+              </span>
+              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-[min(100vw-1.5rem,28rem)] max-w-[95vw] border-border p-0 shadow-lg"
+            align="start"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <div className="border-b border-border p-2">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Input
+                  value={localQ}
+                  onChange={(e) => setLocalQ(e.target.value)}
+                  placeholder="Filter this list…"
+                  className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                />
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto overscroll-contain p-1" role="listbox">
+              {loading && pos.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  <Loader2 className="mb-2 inline h-4 w-4 animate-spin" />
+                  <br />
+                  Loading purchase orders…
+                </p>
+              ) : filtered.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  No purchase orders in this list. Try another search, refresh, or paste a PO id below.{' '}
+                  <Link to={ROUTES.ORG.POS} className="text-primary underline" onClick={() => setOpen(false)}>
+                    Open PO list
+                  </Link>
+                </p>
+              ) : (
+                filtered.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="option"
+                    className={cn(
+                      'flex w-full flex-col items-start gap-0 rounded-md px-2 py-1.5 text-left text-sm',
+                      'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      p.id === value && 'bg-muted/70'
+                    )}
+                    onClick={() => {
+                      onChange(p.id);
+                      setLocalQ('');
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="font-medium">{p.poNumber}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {p.vendorName ?? p.vendorId}
+                      {p.id ? <span className="font-mono"> · {p.id.slice(0, 10)}…</span> : null}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+            <p className="border-t border-border px-2 py-1.5 text-[11px] text-muted-foreground">
+              {filtered.length} of {pos.length} shown
+            </p>
+          </PopoverContent>
+        </Popover>
+      </div>
+    </div>
+  );
 }
 
 function cloneLayout(layout: PackingListLayout): PackingListLayout {
@@ -120,24 +275,6 @@ function detectedCellRef(d: DetectedTemplateField): string | null {
   return null;
 }
 
-/** Non-line static paths — aligned with server catalog; used for “Add row” presets. */
-const HEADER_PRESETS = MAPPABLE_STATIC_PREFIXES.filter((p) => !p.startsWith('line.'));
-const LINE_PRESETS = MAPPABLE_STATIC_PREFIXES.filter((p) => p.startsWith('line.'));
-
-function nextHeaderPath(map: Record<string, string>): string | null {
-  for (const c of HEADER_PRESETS) {
-    if (!Object.prototype.hasOwnProperty.call(map, c)) return c;
-  }
-  return null;
-}
-
-function nextLinePath(map: Record<string, string>): string | null {
-  for (const c of LINE_PRESETS) {
-    if (!Object.prototype.hasOwnProperty.call(map, c)) return c;
-  }
-  return null;
-}
-
 function nextStaticRef(map: Record<string, string>): string {
   for (let r = 1; r <= 200; r++) {
     const ref = `A${r}`;
@@ -155,6 +292,43 @@ function nextStaticR1C1Ref(map: Record<string, string>): string {
   return 'R200C1';
 }
 
+/** Compact key → value table for template field mapping (layout only; no state). */
+function MappingFieldTable({
+  keyLabel,
+  valueLabel,
+  children,
+  showActionColumn = true,
+}: {
+  keyLabel: string;
+  valueLabel: string;
+  children: ReactNode;
+  showActionColumn?: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border/60 bg-muted/5">
+      <table className="w-full min-w-[min(100%,32rem)] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border/70 bg-muted/50">
+            <th className="min-w-0 px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {keyLabel}
+            </th>
+            <th
+              className={cn(
+                'px-2.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground',
+                showActionColumn ? 'w-[7.25rem] min-w-[6.5rem] sm:w-32' : 'w-36 min-w-[7rem] sm:w-40'
+              )}
+            >
+              {valueLabel}
+            </th>
+            {showActionColumn && <th className="w-9 p-0" scope="col" />}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/45">{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
 export function DocumentTemplatesPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -162,6 +336,8 @@ export function DocumentTemplatesPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [layoutDraft, setLayoutDraft] = useState<PackingListLayout | null>(null);
   const [previewPoId, setPreviewPoId] = useState('');
+  const [previewPoSearch, setPreviewPoSearch] = useState('');
+  const debouncedPreviewPoQ = useDebounce(previewPoSearch.trim(), 300);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
   const [activateOpen, setActivateOpen] = useState(false);
@@ -174,12 +350,24 @@ export function DocumentTemplatesPanel() {
   useEffect(() => {
     setEditorTab('structure');
     setDetectedFilter('');
+    setPreviewPoId('');
+    setPreviewPoSearch('');
   }, [selectedId]);
 
   const { data: catalog } = useQuery({
     queryKey: ['org', 'document-templates', 'mappable-fields'],
     queryFn: getDocumentTemplateMappableFields,
   });
+
+  const catalogMerged = useMemo(() => mergeCatalogWithStaticPresets(catalog), [catalog]);
+  const headerMappableOptions = useMemo(
+    () => catalogPathOptions(catalogMerged).filter((o) => !o.path.startsWith('line.')),
+    [catalogMerged]
+  );
+  const lineMappableOptions = useMemo(
+    () => catalogPathOptions(catalogMerged).filter((o) => o.path.startsWith('line.')),
+    [catalogMerged]
+  );
 
   const { data: templates = [], isLoading: listLoading } = useQuery({
     queryKey: ['org', 'document-templates'],
@@ -206,9 +394,15 @@ export function DocumentTemplatesPanel() {
   const structure = excelStructure ?? detail?.excelStructureSnapshot ?? null;
   const isCsv = detail?.masterFormat === 'CSV' || structure?.format === 'CSV';
 
-  const { data: poList } = useQuery({
-    queryKey: ['org', 'pos', 'picker'],
-    queryFn: () => getOrgPOs({ pageSize: 200 }),
+  const {
+    data: poList,
+    isLoading: poListLoading,
+    isFetching: poListFetching,
+    refetch: refetchPoList,
+  } = useQuery({
+    queryKey: ['org', 'pos', 'template-preview-picker', debouncedPreviewPoQ],
+    queryFn: () => getOrgPOs({ pageSize: 500, q: debouncedPreviewPoQ || undefined }),
+    enabled: !!selectedId,
   });
 
   const poOptions = poList?.data ?? [];
@@ -311,27 +505,28 @@ export function DocumentTemplatesPanel() {
     onError: (e: Error) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
   });
 
-  const previewMutation = useMutation({
+  const downloadPreviewMutation = useMutation({
     mutationFn: async () => {
       if (!selectedId) throw new Error('No template');
+      if (!layoutDraft) throw new Error('No layout');
       const po = previewPoId.trim();
-      if (!po) throw new Error('Choose or enter a PO id.');
+      if (!po) throw new Error('Choose or enter a purchase order.');
+      if (layoutDirty) {
+        await saveLayoutMutation.mutateAsync();
+        await queryClient.refetchQueries({ queryKey: ['org', 'document-templates', selectedId] });
+      }
       return previewDocumentTemplate(selectedId, po);
     },
     onSuccess: ({ blob, filename }) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download =
+      const name =
         filename ??
         (detail?.masterFormat === 'CSV' || structure?.format === 'CSV'
           ? 'template-preview.csv'
           : 'template-preview.xlsx');
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: 'Preview downloaded' });
+      triggerDownloadFile(blob, name);
+      toast({ title: 'File downloaded', description: 'Template preview for the selected purchase order.' });
     },
-    onError: (e: Error) => toast({ title: 'Preview failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Preview download failed', description: e.message, variant: 'destructive' }),
   });
 
   const activateMutation = useMutation({
@@ -377,8 +572,9 @@ export function DocumentTemplatesPanel() {
 
   const hasSavedLayoutOnServer =
     detail?.masterFormat === 'CSV' ? !!detail.csvPackingListLayout : !!detail?.packingListLayout;
-  const canPreview = hasFile && hasSavedLayoutOnServer && !layoutDirty;
   const canActivate = hasFile && hasSavedLayoutOnServer && !layoutDirty && selectedRow?.status !== 'ACTIVE';
+  const canDownloadPreview =
+    hasFile && !!layoutDraft && !!previewPoId.trim() && !downloadPreviewMutation.isPending && !saveLayoutMutation.isPending;
 
   const headerRows = useMemo(() => Object.entries(layoutDraft?.headerMap ?? {}), [layoutDraft]);
   const lineRows = useMemo(() => Object.entries(layoutDraft?.itemsColMap ?? {}), [layoutDraft]);
@@ -771,7 +967,7 @@ export function DocumentTemplatesPanel() {
                       )}
                     </TabsContent>
 
-                    <TabsContent value="layout" className="mt-0 space-y-8 focus-visible:ring-0">
+                    <TabsContent value="layout" className="mt-0 space-y-5 focus-visible:ring-0">
                       {isCsv && (
                         <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                           <strong className="text-foreground">CSV mapping:</strong> use <code className="text-[11px]">R1C1</code> for header and
@@ -779,7 +975,7 @@ export function DocumentTemplatesPanel() {
                           <code className="text-[11px]">B</code>, …).
                         </p>
                       )}
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         {!isCsv && (
                           <div className="space-y-2">
                             <Label>Worksheet</Label>
@@ -819,19 +1015,27 @@ export function DocumentTemplatesPanel() {
                         </div>
                       </div>
 
-                      <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+                      <div className="space-y-2 rounded-xl border border-border/60 bg-card p-3 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <h4 className="text-sm font-medium">Header fields</h4>
+                          <div>
+                            <h4 className="text-sm font-medium leading-tight">Header &amp; static body</h4>
+                            <p className="text-[11px] text-muted-foreground">
+                              Organization, purchase order, vendor — maps to single cells (not repeating line fields). All catalog fields listed
+                              below.
+                            </p>
+                          </div>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
+                            className="h-8"
                             onClick={() => {
-                              const nextPath = nextHeaderPath(layoutDraft.headerMap);
+                              const nextPath = nextUnmappedCatalogPath(layoutDraft.headerMap, catalog, false);
                               if (!nextPath) {
                                 toast({
-                                  title: 'No preset fields left',
-                                  description: 'Edit an existing row’s path or remove one, then add again.',
+                                  title: 'No fields left to add',
+                                  description:
+                                    'Every field from the catalog is already mapped, or the list is empty. Remove a row or use a custom path below.',
                                   variant: 'destructive',
                                 });
                                 return;
@@ -840,57 +1044,62 @@ export function DocumentTemplatesPanel() {
                             }}
                           >
                             <Plus className="mr-1 h-3.5 w-3.5" />
-                            Add row
+                            Add
                           </Button>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Map <strong>organization.*</strong>, <strong>purchaseOrder.*</strong>, and <strong>vendor.*</strong> only (not{' '}
-                          <code className="text-[11px]">line.*</code>). The dropdown reflects{' '}
-                          <code className="text-[11px]">GET …/mappable-fields</code> — including NetSuite keys from synced data, record cache,
-                          and field-config. Custom paths:{' '}
-                          <code className="text-[11px]">purchaseOrder.netsuiteFields.&lt;key&gt;</code>,{' '}
-                          <code className="text-[11px]">vendor.netsuiteFields.&lt;key&gt;</code>,{' '}
-                          <code className="text-[11px]">purchaseOrder.summary.&lt;subKey&gt;</code> (key segment: letters, digits,{' '}
-                          <code className="text-[11px]">_</code>, <code className="text-[11px]">.</code>, <code className="text-[11px]">-</code>).
-                        </p>
-                        <div className="space-y-2">
-                          {headerRows.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No header rows. Add a row or save an empty layout.</p>
-                          ) : (
-                            headerRows.map(([path, cellRef], index) => (
-                              <div
-                                key={`${path}-${index}`}
-                                className="flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:flex-row sm:items-end"
-                              >
-                                <div className="min-w-0 flex-1 space-y-1">
-                                  <Label className="text-xs">Portal field</Label>
-                                  <CatalogPathSelect
-                                    catalog={catalog}
-                                    value={path}
-                                    lineOnly={false}
-                                    onPick={(p) => {
-                                      const next = { ...layoutDraft.headerMap };
-                                      delete next[path];
-                                      next[p] = cellRef;
-                                      updateLayout({ headerMap: next });
-                                    }}
-                                  />
+                        <details className="rounded-md border border-border/40 bg-muted/15 text-xs text-muted-foreground open:bg-muted/25">
+                          <summary className="cursor-pointer list-none px-2 py-1.5 font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                            Path rules: organization / purchase order / vendor (not line.*)
+                          </summary>
+                          <div className="space-y-1.5 border-t border-border/40 px-2 py-2 leading-relaxed">
+                            <p>
+                              The catalog comes from <code className="text-[11px]">GET …/mappable-fields</code> (NetSuite keys, record cache, field
+                              config). Custom path examples: <code className="text-[11px]">purchaseOrder.netsuiteFields.&lt;key&gt;</code>,{' '}
+                              <code className="text-[11px]">vendor.netsuiteFields.&lt;key&gt;</code>,{' '}
+                              <code className="text-[11px]">purchaseOrder.summary.&lt;subKey&gt;</code> (segments: letters, digits,{' '}
+                              <code className="text-[11px]">_</code>, <code className="text-[11px]">.</code>, <code className="text-[11px]">-</code>
+                              ).
+                            </p>
+                          </div>
+                        </details>
+                        {headerRows.length === 0 ? (
+                          <p className="py-2 text-sm text-muted-foreground">No mappings yet. Add a row to map portal fields to template cells.</p>
+                        ) : (
+                          <MappingFieldTable
+                            keyLabel="Portal data path"
+                            valueLabel={isCsv ? 'R/C' : 'Cell'}
+                          >
+                            {headerRows.map(([path, cellRef], index) => (
+                              <tr key={`${path}-${index}`} className="align-top">
+                                <td className="min-w-0 px-2 py-1.5">
+                                  <div className="space-y-1">
+                                    <MappablePathCombobox
+                                      options={headerMappableOptions}
+                                      value={path}
+                                      onPick={(p) => {
+                                        const next = { ...layoutDraft.headerMap };
+                                        delete next[path];
+                                        next[p] = cellRef;
+                                        updateLayout({ headerMap: next });
+                                      }}
+                                      placeholder="Search org / PO / vendor fields…"
+                                    />
+                                    <Input
+                                      className="h-8 font-mono text-xs"
+                                      value={path}
+                                      onChange={(e) => {
+                                        const next = { ...layoutDraft.headerMap };
+                                        delete next[path];
+                                        next[e.target.value] = cellRef;
+                                        updateLayout({ headerMap: next });
+                                      }}
+                                      placeholder="organization.name"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-2 py-1.5">
                                   <Input
-                                    className="font-mono text-xs"
-                                    value={path}
-                                    onChange={(e) => {
-                                      const next = { ...layoutDraft.headerMap };
-                                      delete next[path];
-                                      next[e.target.value] = cellRef;
-                                      updateLayout({ headerMap: next });
-                                    }}
-                                    placeholder="organization.name"
-                                  />
-                                </div>
-                                <div className="w-full space-y-1 sm:w-36">
-                                  <Label className="text-xs">{isCsv ? 'R/C ref' : 'Cell ref'}</Label>
-                                  <Input
-                                    className="font-mono text-sm"
+                                    className="h-8 font-mono text-sm"
                                     value={cellRef}
                                     onFocus={() => {
                                       setRefFocus('header');
@@ -903,40 +1112,50 @@ export function DocumentTemplatesPanel() {
                                     }}
                                     placeholder={isCsv ? 'R2C3' : 'B2'}
                                   />
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="shrink-0 text-destructive"
-                                  onClick={() => {
-                                    const next = { ...layoutDraft.headerMap };
-                                    delete next[path];
-                                    updateLayout({ headerMap: next });
-                                  }}
-                                  aria-label="Remove row"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                                </td>
+                                <td className="px-1 py-1 align-top">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive"
+                                    onClick={() => {
+                                      const next = { ...layoutDraft.headerMap };
+                                      delete next[path];
+                                      updateLayout({ headerMap: next });
+                                    }}
+                                    aria-label="Remove row"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </MappingFieldTable>
+                        )}
                       </div>
 
-                      <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+                      <div className="space-y-2 rounded-xl border border-border/60 bg-card p-3 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <h4 className="text-sm font-medium">Line columns</h4>
+                          <div>
+                            <h4 className="text-sm font-medium leading-tight">Line item columns</h4>
+                            <p className="text-[11px] text-muted-foreground">
+                              Repeating row fields (<code className="text-[11px]">line.*</code>) → one column each. All line catalog fields are listed
+                              when you search.
+                            </p>
+                          </div>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
+                            className="h-8"
                             onClick={() => {
-                              const nextPath = nextLinePath(layoutDraft.itemsColMap);
+                              const nextPath = nextUnmappedCatalogPath(layoutDraft.itemsColMap, catalog, true);
                               if (!nextPath) {
                                 toast({
-                                  title: 'No preset line fields left',
-                                  description: 'Remove a row or edit another column path.',
+                                  title: 'No line fields left to add',
+                                  description:
+                                    'Every line field from the catalog is already mapped, or the list is empty. Remove a row or use a custom path below.',
                                   variant: 'destructive',
                                 });
                                 return;
@@ -945,51 +1164,53 @@ export function DocumentTemplatesPanel() {
                             }}
                           >
                             <Plus className="mr-1 h-3.5 w-3.5" />
-                            Add row
+                            Add
                           </Button>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Only <strong>line.*</strong> paths (catalog + <code className="text-[11px]">line.netsuiteFields.&lt;key&gt;</code>). Each
-                          field maps to a column letter (A, B, …). Use the same first line row above for all columns.
-                        </p>
-                        <div className="space-y-2">
-                          {lineRows.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No line columns yet.</p>
-                          ) : (
-                            lineRows.map(([path, col], index) => (
-                              <div
-                                key={`${path}-${index}`}
-                                className="flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:flex-row sm:items-end"
-                              >
-                                <div className="min-w-0 flex-1 space-y-1">
-                                  <Label className="text-xs">Line field</Label>
-                                  <CatalogPathSelect
-                                    catalog={catalog}
-                                    value={path}
-                                    lineOnly
-                                    onPick={(p) => {
-                                      const next = { ...layoutDraft.itemsColMap };
-                                      delete next[path];
-                                      next[p] = col;
-                                      updateLayout({ itemsColMap: next });
-                                    }}
-                                  />
+                        <details className="rounded-md border border-border/40 bg-muted/15 text-xs text-muted-foreground open:bg-muted/25">
+                          <summary className="cursor-pointer list-none px-2 py-1.5 font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                            Line paths: line.* and line.netsuiteFields.&lt;key&gt;
+                          </summary>
+                          <p className="border-t border-border/40 px-2 py-2 leading-relaxed">
+                            Each line field maps to a column letter ({' '}
+                            <code className="text-[11px]">A</code>, <code className="text-[11px]">B</code>, …) on the first line row set above.
+                          </p>
+                        </details>
+                        {lineRows.length === 0 ? (
+                          <p className="py-2 text-sm text-muted-foreground">No line columns yet.</p>
+                        ) : (
+                          <MappingFieldTable keyLabel="Line data path" valueLabel="Col">
+                            {lineRows.map(([path, col], index) => (
+                              <tr key={`${path}-${index}`} className="align-top">
+                                <td className="min-w-0 px-2 py-1.5">
+                                  <div className="space-y-1">
+                                    <MappablePathCombobox
+                                      options={lineMappableOptions}
+                                      value={path}
+                                      onPick={(p) => {
+                                        const next = { ...layoutDraft.itemsColMap };
+                                        delete next[path];
+                                        next[p] = col;
+                                        updateLayout({ itemsColMap: next });
+                                      }}
+                                      placeholder="Search line fields…"
+                                    />
+                                    <Input
+                                      className="h-8 font-mono text-xs"
+                                      value={path}
+                                      onChange={(e) => {
+                                        const next = { ...layoutDraft.itemsColMap };
+                                        delete next[path];
+                                        next[e.target.value] = col;
+                                        updateLayout({ itemsColMap: next });
+                                      }}
+                                      placeholder="line.sku"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-2 py-1.5">
                                   <Input
-                                    className="font-mono text-xs"
-                                    value={path}
-                                    onChange={(e) => {
-                                      const next = { ...layoutDraft.itemsColMap };
-                                      delete next[path];
-                                      next[e.target.value] = col;
-                                      updateLayout({ itemsColMap: next });
-                                    }}
-                                    placeholder="line.sku"
-                                  />
-                                </div>
-                                <div className="w-full space-y-1 sm:w-28">
-                                  <Label className="text-xs">Column</Label>
-                                  <Input
-                                    className="font-mono text-sm"
+                                    className="h-8 font-mono text-sm"
                                     value={col}
                                     onChange={(e) => {
                                       const next = { ...layoutDraft.itemsColMap };
@@ -998,63 +1219,80 @@ export function DocumentTemplatesPanel() {
                                     }}
                                     placeholder="A"
                                   />
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="shrink-0 text-destructive"
-                                  onClick={() => {
-                                    const next = { ...layoutDraft.itemsColMap };
-                                    delete next[path];
-                                    updateLayout({ itemsColMap: next });
-                                  }}
-                                  aria-label="Remove row"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                                </td>
+                                <td className="px-1 py-1 align-top">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive"
+                                    onClick={() => {
+                                      const next = { ...layoutDraft.itemsColMap };
+                                      delete next[path];
+                                      updateLayout({ itemsColMap: next });
+                                    }}
+                                    aria-label="Remove row"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </MappingFieldTable>
+                        )}
                       </div>
 
-                      <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-                        <h4 className="text-sm font-medium">Totals</h4>
-                        <p className="text-xs text-muted-foreground">Optional. Computed totals from line items are written to these cells.</p>
-                        <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2 rounded-xl border border-border/60 bg-card p-3 shadow-sm">
+                        <div>
+                          <h4 className="text-sm font-medium leading-tight">Totals (footer / summary row)</h4>
+                          <p className="text-[11px] text-muted-foreground">
+                            Optional. System totals (from line items) — map each to a cell, often the sheet footer. All available totals are
+                            listed.
+                          </p>
+                        </div>
+                        <MappingFieldTable
+                          keyLabel="Total"
+                          valueLabel={isCsv ? 'R/C' : 'Cell'}
+                          showActionColumn={false}
+                        >
                           {PACKING_LIST_TOTAL_KEYS.map((key) => (
-                            <div key={key} className="space-y-1">
-                              <Label className="text-xs">{packingListTotalLabel(key)}</Label>
-                              <Input
-                                className="font-mono text-sm"
-                                value={layoutDraft.totalsMap[key] ?? ''}
-                                onFocus={() => {
-                                  setRefFocus('totals');
-                                  setTotalsKeyFocus(key);
-                                  setRefFocusIndex(null);
-                                }}
-                                onChange={(e) => {
-                                  const v = e.target.value.trim().toUpperCase();
-                                  const next = { ...layoutDraft.totalsMap };
-                                  if (!v) delete next[key];
-                                  else next[key] = v;
-                                  updateLayout({ totalsMap: next });
-                                }}
-                                placeholder={isCsv ? 'R15C2' : 'e.g. B50'}
-                              />
-                            </div>
+                            <tr key={key} className="align-top">
+                              <td className="px-2.5 py-1.5 text-sm text-foreground">{packingListTotalLabel(key)}</td>
+                              <td className="px-2.5 py-1.5">
+                                <Input
+                                  className="h-8 font-mono text-sm"
+                                  value={layoutDraft.totalsMap[key] ?? ''}
+                                  onFocus={() => {
+                                    setRefFocus('totals');
+                                    setTotalsKeyFocus(key);
+                                    setRefFocusIndex(null);
+                                  }}
+                                  onChange={(e) => {
+                                    const v = e.target.value.trim().toUpperCase();
+                                    const next = { ...layoutDraft.totalsMap };
+                                    if (!v) delete next[key];
+                                    else next[key] = v;
+                                    updateLayout({ totalsMap: next });
+                                  }}
+                                  placeholder={isCsv ? 'R15C2' : 'e.g. B50'}
+                                />
+                              </td>
+                            </tr>
                           ))}
-                        </div>
+                        </MappingFieldTable>
                       </div>
 
-                      <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+                      <div className="space-y-2 rounded-xl border border-border/60 bg-card p-3 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <h4 className="text-sm font-medium">Static cells</h4>
+                          <div>
+                            <h4 className="text-sm font-medium leading-tight">Static text (headers, footers, labels)</h4>
+                            <p className="text-[11px] text-muted-foreground">Fixed text in any cell — not portal data. Use for column titles, footers, notes.</p>
+                          </div>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
+                            className="h-8"
                             onClick={() => {
                               const nextRef = isCsv
                                 ? nextStaticR1C1Ref(layoutDraft.staticCells ?? {})
@@ -1063,20 +1301,21 @@ export function DocumentTemplatesPanel() {
                             }}
                           >
                             <Plus className="mr-1 h-3.5 w-3.5" />
-                            Add row
+                            Add
                           </Button>
                         </div>
-                        <p className="text-xs text-muted-foreground">Fixed text written to the cell after headers (e.g. labels).</p>
-                        <div className="space-y-2">
-                          {staticEntries.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">None.</p>
-                          ) : (
-                            staticEntries.map(([ref, val], index) => (
-                              <div key={`${ref}-${index}`} className="flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:flex-row sm:items-end">
-                                <div className="space-y-1 sm:w-36">
-                                  <Label className="text-xs">{isCsv ? 'R/C ref' : 'Cell ref'}</Label>
+                        {staticEntries.length === 0 ? (
+                          <p className="py-1 text-sm text-muted-foreground">None — add a row for labels or other fixed text.</p>
+                        ) : (
+                          <MappingFieldTable
+                            keyLabel={isCsv ? 'R/C' : 'Cell'}
+                            valueLabel="Text"
+                          >
+                            {staticEntries.map(([ref, val], index) => (
+                              <tr key={`${ref}-${index}`} className="align-top">
+                                <td className="min-w-0 px-2 py-1.5">
                                   <Input
-                                    className="font-mono text-sm"
+                                    className="h-8 font-mono text-sm"
                                     value={ref}
                                     onFocus={() => {
                                       setRefFocus('static');
@@ -1090,10 +1329,10 @@ export function DocumentTemplatesPanel() {
                                     }}
                                     placeholder={isCsv ? 'R1C1' : 'A1'}
                                   />
-                                </div>
-                                <div className="min-w-0 flex-1 space-y-1">
-                                  <Label className="text-xs">Value</Label>
+                                </td>
+                                <td className="min-w-0 px-2 py-1.5">
                                   <Input
+                                    className="h-8 text-sm"
                                     value={val}
                                     onChange={(e) => {
                                       const next = { ...(layoutDraft.staticCells ?? {}) };
@@ -1101,25 +1340,27 @@ export function DocumentTemplatesPanel() {
                                       updateLayout({ staticCells: next });
                                     }}
                                   />
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="shrink-0 text-destructive"
-                                  onClick={() => {
-                                    const next = { ...(layoutDraft.staticCells ?? {}) };
-                                    delete next[ref];
-                                    updateLayout({ staticCells: Object.keys(next).length ? next : undefined });
-                                  }}
-                                  aria-label="Remove row"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                                </td>
+                                <td className="px-1 py-1 align-top">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive"
+                                    onClick={() => {
+                                      const next = { ...(layoutDraft.staticCells ?? {}) };
+                                      delete next[ref];
+                                      updateLayout({ staticCells: Object.keys(next).length ? next : undefined });
+                                    }}
+                                    aria-label="Remove row"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </MappingFieldTable>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap gap-2 border-t border-border/60 pt-4">
@@ -1139,58 +1380,54 @@ export function DocumentTemplatesPanel() {
 
                     <TabsContent value="preview" className="mt-0 space-y-6 focus-visible:ring-0">
                       <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
-                        <h4 className="text-sm font-medium">Preview</h4>
+                        <h4 className="text-sm font-medium">Preview with a real purchase order</h4>
                         <p className="text-xs text-muted-foreground">
-                          Filled {isCsv ? 'CSV' : 'workbook'} for a real PO. The server uses the <strong>last saved</strong> layout.
+                          Search and select a PO (or paste its id). The server builds a filled {isCsv ? 'CSV' : 'workbook'} using this template. If
+                          the layout has unsaved changes, it is saved first, then the file is generated and downloaded.
                         </p>
                         {layoutDirty && (
-                          <p className="text-xs text-amber-800 dark:text-amber-200">Save the layout tab before preview.</p>
+                          <p className="text-xs text-amber-800 dark:text-amber-200">
+                            You have unsaved layout changes — clicking download will save them, then create the preview.
+                          </p>
                         )}
-                        {!hasSavedLayoutOnServer && (
-                          <p className="text-xs text-muted-foreground">Save a layout first.</p>
-                        )}
-                        <div className="flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-end">
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <Label htmlFor="preview-po">Purchase order</Label>
-                            <Select
-                              value={previewPoId && poOptions.some((p) => p.id === previewPoId) ? previewPoId : undefined}
-                              onValueChange={(v) => setPreviewPoId(v)}
-                            >
-                              <SelectTrigger id="preview-po">
-                                <SelectValue placeholder="Select a PO…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {poOptions.map((p) => (
-                                  <SelectItem key={p.id} value={p.id}>
-                                    {p.poNumber} ({p.id.slice(0, 8)}…)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <Label htmlFor="preview-po-id">Or paste PO id</Label>
+                        <div className="max-w-2xl space-y-4">
+                          <TemplatePreviewPoPicker
+                            pos={poOptions}
+                            value={previewPoId}
+                            onChange={setPreviewPoId}
+                            search={previewPoSearch}
+                            onSearchChange={setPreviewPoSearch}
+                            loading={poListLoading}
+                            refreshing={poListFetching}
+                            onRefresh={() => void refetchPoList()}
+                          />
+                          <div className="space-y-1">
+                            <Label htmlFor="preview-po-id">Or paste purchase order id</Label>
                             <Input
                               id="preview-po-id"
                               value={previewPoId}
                               onChange={(e) => setPreviewPoId(e.target.value)}
-                              placeholder="24-char hex id"
+                              placeholder="24-character PO id (same as in the URL on PO detail)"
                               className="font-mono text-sm"
                             />
                           </div>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={!hasFile || !previewPoId.trim() || previewMutation.isPending || !canPreview}
-                            onClick={() => previewMutation.mutate()}
-                          >
-                            {previewMutation.isPending ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Download className="mr-2 h-4 w-4" />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              disabled={!canDownloadPreview}
+                              onClick={() => downloadPreviewMutation.mutate()}
+                            >
+                              {downloadPreviewMutation.isPending || saveLayoutMutation.isPending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="mr-2 h-4 w-4" />
+                              )}
+                              Download filled file
+                            </Button>
+                            {poListFetching && !poListLoading && (
+                              <span className="text-xs text-muted-foreground">Updating list…</span>
                             )}
-                            Download preview
-                          </Button>
+                          </div>
                         </div>
                       </div>
 
@@ -1292,56 +1529,3 @@ export function DocumentTemplatesPanel() {
   );
 }
 
-function CatalogPathSelect({
-  catalog,
-  value,
-  onPick,
-  disabled,
-  lineOnly,
-}: {
-  catalog: MappableFieldsCatalog | undefined;
-  value: string;
-  onPick: (path: string) => void;
-  disabled?: boolean;
-  lineOnly?: boolean;
-}) {
-  const options = useMemo(() => {
-    const all = catalogPathOptions(catalog);
-    if (lineOnly) return all.filter((o) => o.path.startsWith('line.'));
-    return all.filter((o) => !o.path.startsWith('line.'));
-  }, [catalog, lineOnly]);
-  const pathSet = useMemo(() => new Set(options.map((o) => o.path)), [options]);
-  const selectValue = pathSet.has(value) ? value : '__custom__';
-
-  return (
-    <Select
-      value={selectValue}
-      onValueChange={(v) => {
-        if (v === '__custom__') return;
-        onPick(v);
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger className="h-9 font-mono text-xs">
-        <SelectValue placeholder="Pick from catalog…" />
-      </SelectTrigger>
-      <SelectContent className="max-h-[min(24rem,60vh)]">
-        {CATALOG_GROUPS.map((g) => {
-          const items = options.filter((o) => o.group === g.label);
-          if (items.length === 0) return null;
-          return (
-            <SelectGroup key={g.key}>
-              <SelectLabel>{g.label}</SelectLabel>
-              {items.map((o) => (
-                <SelectItem key={o.path} value={o.path} className="font-mono text-xs">
-                  {o.path} — {o.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          );
-        })}
-        <SelectItem value="__custom__">Custom path (edit below)</SelectItem>
-      </SelectContent>
-    </Select>
-  );
-}

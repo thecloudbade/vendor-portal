@@ -1,7 +1,7 @@
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { downloadOrgFile, getAuditLog, getOrgPODetail } from '../api/org.api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { downloadOrgFile, getAuditLog, getNetSuiteIntegration, getOrgPODetail, postOrgPOResetPackingList } from '../api/org.api';
 import { PageHeader } from '@/modules/common/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,19 @@ import { formatDateTime } from '@/modules/common/utils/format';
 import { EmptyState } from '@/modules/common/components/EmptyState';
 import { KeyValueFields } from '@/modules/common/components/KeyValueFields';
 import { PoLineItemsSection } from '@/modules/common/components/PoLineItemsSection';
-import { AlertTriangle, ArrowLeft, Download, FileText, ListOrdered, Loader2, PackageOpen, Paperclip } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Download,
+  FileText,
+  ListOrdered,
+  Loader2,
+  PackageOpen,
+  Paperclip,
+  RotateCcw,
+} from 'lucide-react';
 import { resolveBackTo } from '@/modules/common/utils/navigationState';
-import { canViewAudit } from '@/modules/common/constants/roles';
+import { canViewAudit, isOrgRole } from '@/modules/common/constants/roles';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -25,6 +35,15 @@ import {
   mismatchRowsToBarPoints,
   tolerancePctForUploadType,
 } from '../utils/poUploadDeviation';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 function OrgPoBackLink() {
   const { state } = useLocation();
@@ -41,11 +60,14 @@ function OrgPoBackLink() {
 
 export function PODetailsPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isOrgUser = user?.userType === 'org' && isOrgRole(user.role ?? '');
   const canLoadAuditFallback =
     user?.userType === 'org' && canViewAudit(user.role ?? '');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  const [resetPackingOpen, setResetPackingOpen] = useState(false);
   const { poId } = useParams<{ poId: string }>();
   const { data: po, isLoading, error } = useQuery({
     queryKey: ['org', 'po', poId],
@@ -55,6 +77,54 @@ export function PODetailsPage() {
       const uploads = q.state.data?.uploads;
       const pending = uploads?.some((u) => u.netsuiteDocumentPush?.status === 'PENDING');
       return pending ? 5000 : false;
+    },
+  });
+
+  const { data: nsIntegration } = useQuery({
+    queryKey: ['org', 'netsuite', 'integration'],
+    queryFn: () => getNetSuiteIntegration(),
+    enabled: isOrgUser && !!poId,
+  });
+
+  const resetPackingPrereq = useMemo(() => {
+    if (!po) return { ready: false as const };
+    const tid = po.netsuiteTransId != null ? Number(po.netsuiteTransId) : NaN;
+    const fid = nsIntegration?.documentUploadFolderId;
+    const folderNum = fid != null && Number.isFinite(Number(fid)) ? Number(fid) : NaN;
+    if (!Number.isFinite(tid) || !Number.isFinite(folderNum)) {
+      return { ready: false as const };
+    }
+    return { ready: true as const, transactionId: Math.floor(tid), folderId: Math.floor(folderNum) };
+  }, [po, nsIntegration?.documentUploadFolderId]);
+
+  const canOfferResetPacking = isOrgUser && resetPackingPrereq.ready && (po?.uploads?.length ?? 0) > 0;
+
+  const resetPackingMutation = useMutation({
+    mutationFn: () => {
+      if (!poId || !resetPackingPrereq.ready) {
+        return Promise.reject(new Error('NetSuite purchase order or document folder is not configured.'));
+      }
+      return postOrgPOResetPackingList(poId, {
+        type: 'resetpackinglist',
+        transactionType: 'purchaseorder',
+        transactionId: resetPackingPrereq.transactionId,
+        folderId: resetPackingPrereq.folderId,
+      });
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['org', 'po', poId] });
+      setResetPackingOpen(false);
+      const ok = res?.status === 'success' || res?.status == null;
+      toast({
+        title: ok ? 'Packing and invoice quantities reset' : 'Reset completed',
+        description:
+          res?.custbody_vfs_total_packinglist_qty != null && res?.custbody_vfs_total_com_inv_qty != null
+            ? `NetSuite totals cleared (packing list ${res.custbody_vfs_total_packinglist_qty}, commercial invoice ${res.custbody_vfs_total_com_inv_qty}). The vendor can upload again if your policy allows.`
+            : 'Refresh the page if totals do not update. The vendor can upload again if your policy allows.',
+      });
+    },
+    onError: (e: Error) => {
+      toast({ title: 'Reset failed', description: e.message, variant: 'destructive' });
     },
   });
 
@@ -151,6 +221,63 @@ export function PODetailsPage() {
           po.updatedAt ? ` · Updated ${formatDateTime(po.updatedAt)}` : ''
         }`}
       />
+
+      {canOfferResetPacking && (
+        <Card className="border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/25">
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Vendor locked out of reuploads?</p>
+              <p className="text-xs text-muted-foreground">
+                Reset packing list and commercial invoice quantities in NetSuite for this PO. The vendor can submit documents
+                again according to your org rules (e.g. reuploads allowed).
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 gap-2 border-amber-800/20 bg-background dark:border-amber-700/30"
+              onClick={() => setResetPackingOpen(true)}
+              disabled={resetPackingMutation.isPending}
+            >
+              {resetPackingMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <RotateCcw className="h-4 w-4" aria-hidden />
+              )}
+              Reset NetSuite packing / CI
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <AlertDialog open={resetPackingOpen} onOpenChange={setResetPackingOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset packing list and commercial invoice quantities?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This calls NetSuite to clear quantity lines for this purchase order. Portal submission history is unchanged, but
+              the vendor is allowed to upload again when your settings permit. This cannot be undone from the portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetPackingMutation.isPending}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              onClick={() => resetPackingMutation.mutate()}
+              disabled={resetPackingMutation.isPending}
+            >
+              {resetPackingMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                  Resetting…
+                </>
+              ) : (
+                'Reset in NetSuite'
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card>
         <CardHeader>

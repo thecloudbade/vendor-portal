@@ -87,6 +87,10 @@ export interface OrgPOUploadRules {
   packingListQtyTolerancePct: number;
   commercialInvoiceQtyTolerancePct: number;
   blockSubmitOnQtyToleranceExceeded: boolean;
+  /** When false, no further submissions after existing uploads (until org reset). Default true when omitted. */
+  allowReupload?: boolean;
+  /** Max submissions per PO when reuploads are allowed. Default 3 when omitted. */
+  maxReuploadAttempts?: number;
 }
 
 /** One line from upload validation (PL/CI qty tolerance, ordered vs packed/shipped, etc.). */
@@ -132,7 +136,26 @@ export interface PODetail {
   updatedAt?: string;
   /** NetSuite internal PO id for `purchaseLineData` fetch (`trans_id`); falls back to `id` when omitted */
   netsuiteTransId?: string;
+  /**
+   * When false, vendor cannot upload until an org admin runs “reset packing” (NetSuite + portal).
+   * When true/omitted, `getVendorDocumentUploadAccess` derives from `uploadRules` and `uploads`.
+   */
+  documentUploadsAllowed?: boolean;
 }
+
+/** POST /org/pos/:poId/reset-packing — forwards to NetSuite; org admin only (server-enforced). */
+export type OrgPOResetPackingListPayload = {
+  type: 'resetpackinglist';
+  transactionType: 'purchaseorder';
+  transactionId: number;
+  folderId: number;
+};
+
+export type OrgPOResetPackingListResult = {
+  status?: string;
+  custbody_vfs_total_packinglist_qty?: string;
+  custbody_vfs_total_com_inv_qty?: string;
+};
 
 /** PUT /org/pos/:id — sync portal PO from NetSuite / org admin */
 export interface OrgPOUpdatePayload {
@@ -247,6 +270,10 @@ export interface NetSuiteIntegrationStatus {
   restletTypeDocumentUpload?: string;
   /** RESTlet `type` query for POST `packinglistupdate` (`packingLines` / `commercialLines`). Empty → API default `packinglistupdate`. */
   restletTypeLineUpdate?: string;
+  /** When true, RESTlet branch names are edited under Platform → organization, not here. */
+  restletTypesManagedByPlatform?: boolean;
+  /** True when the platform operator set at least one override for this tenant. */
+  platformRestletOverridesActive?: boolean;
   /** NetSuite file cabinet folder internal id for vendor PL/CI PDF uploads. */
   documentUploadFolderId?: number | null;
   documentUploadQueryPage?: string;
@@ -278,15 +305,8 @@ export interface NetSuiteIntegrationPutPayload {
   realm: string;
   scriptId: string;
   deployId: string;
-  restletTypeVendors: string;
-  restletTypePurchaseOrders: string;
-  restletTypePurchaseLineData: string;
-  restletTypeDocumentUpload?: string;
-  restletTypeLineUpdate?: string;
   /** NetSuite file cabinet folder internal id; send `null` to clear. */
   documentUploadFolderId?: number | null;
-  documentUploadQueryPage?: string;
-  documentUploadQueryLimit?: string;
   consumerKey?: string;
   consumerSecret?: string;
   tokenId?: string;

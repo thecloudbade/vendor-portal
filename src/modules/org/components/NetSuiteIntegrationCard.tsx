@@ -8,9 +8,9 @@ import {
   putNetSuiteIntegration,
   putNetSuiteSyncSchedule,
   postNetSuiteTest,
-  postNetSuiteSyncVendors,
-  postNetSuiteSyncPurchaseOrders,
   deleteNetSuiteIntegration,
+  postNetSuiteFoldersList,
+  postNetSuiteFoldersCreate,
 } from '../api/org.api';
 import type { NetSuiteIntegrationPutPayload } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +36,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Plug, Loader2, Trash2, CalendarClock } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Plug, FolderPlus, Loader2, Trash2, CalendarClock } from 'lucide-react';
 
 function formatScheduleTs(iso: string | null | undefined): string {
   if (iso == null || String(iso).trim() === '') return '—';
@@ -43,14 +58,7 @@ const putSchema = z.object({
   realm: z.string().min(1),
   scriptId: z.string().min(1),
   deployId: z.string().min(1),
-  restletTypeVendors: z.string().min(1),
-  restletTypePurchaseOrders: z.string().min(1),
-  restletTypePurchaseLineData: z.string().min(1),
-  restletTypeDocumentUpload: z.string().optional(),
-  restletTypeLineUpdate: z.string().optional(),
   documentUploadFolderId: z.string().optional(),
-  documentUploadQueryPage: z.string().optional(),
-  documentUploadQueryLimit: z.string().optional(),
   consumerKey: z.string().optional(),
   consumerSecret: z.string().optional(),
   tokenId: z.string().optional(),
@@ -58,6 +66,23 @@ const putSchema = z.object({
 });
 
 type PutForm = z.infer<typeof putSchema>;
+
+function parseFolderRows(body: unknown): { id: number; name: string }[] {
+  if (!body || typeof body !== 'object') return [];
+  const o = body as Record<string, unknown>;
+  const data = o.data;
+  if (!Array.isArray(data)) return [];
+  const out: { id: number; name: string }[] = [];
+  for (const row of data) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const id = Number(r.id);
+    const name = r.name != null ? String(r.name) : '';
+    if (!Number.isFinite(id) || !name) continue;
+    out.push({ id, name });
+  }
+  return out;
+}
 
 export function NetSuiteIntegrationCard() {
   const { toast } = useToast();
@@ -72,6 +97,12 @@ export function NetSuiteIntegrationCard() {
   const [schedPoEnabled, setSchedPoEnabled] = useState(true);
   const [vendorIntervalH, setVendorIntervalH] = useState(24);
   const [poIntervalH, setPoIntervalH] = useState(12);
+
+  const [folderRows, setFolderRows] = useState<{ id: number; name: string }[]>([]);
+  const [createParentId, setCreateParentId] = useState('');
+  const [createName, setCreateName] = useState('');
+  const [createDesc, setCreateDesc] = useState('');
+  const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!status?.configured) return;
@@ -96,14 +127,7 @@ export function NetSuiteIntegrationCard() {
       realm: '',
       scriptId: '',
       deployId: '1',
-      restletTypeVendors: 'vendors',
-      restletTypePurchaseOrders: 'purchaseorders',
-      restletTypePurchaseLineData: 'purchaseLineData',
-      restletTypeDocumentUpload: 'vendorfilesupload',
-      restletTypeLineUpdate: '',
       documentUploadFolderId: '',
-      documentUploadQueryPage: '1',
-      documentUploadQueryLimit: '100',
       consumerKey: '',
       consumerSecret: '',
       tokenId: '',
@@ -118,17 +142,10 @@ export function NetSuiteIntegrationCard() {
       realm: status.realm ?? '',
       scriptId: status.scriptId ?? '',
       deployId: status.deployId ?? '1',
-      restletTypeVendors: status.typeVendors ?? 'vendors',
-      restletTypePurchaseOrders: status.typePurchaseOrders ?? 'purchaseorders',
-      restletTypePurchaseLineData: status.typePurchaseLineData ?? 'purchaseLineData',
-      restletTypeDocumentUpload: status.restletTypeDocumentUpload ?? 'vendorfilesupload',
-      restletTypeLineUpdate: status.restletTypeLineUpdate ?? '',
       documentUploadFolderId:
         status.documentUploadFolderId != null && Number.isFinite(Number(status.documentUploadFolderId))
           ? String(status.documentUploadFolderId)
           : '',
-      documentUploadQueryPage: status.documentUploadQueryPage ?? '1',
-      documentUploadQueryLimit: status.documentUploadQueryLimit ?? '100',
       consumerKey: '',
       consumerSecret: '',
       tokenId: '',
@@ -143,9 +160,6 @@ export function NetSuiteIntegrationCard() {
         realm: payload.realm.trim(),
         scriptId: payload.scriptId.trim(),
         deployId: payload.deployId.trim(),
-        restletTypeVendors: payload.restletTypeVendors.trim(),
-        restletTypePurchaseOrders: payload.restletTypePurchaseOrders.trim(),
-        restletTypePurchaseLineData: payload.restletTypePurchaseLineData.trim(),
       };
       const folderStr = (payload.documentUploadFolderId ?? '').trim();
       if (folderStr === '') {
@@ -157,14 +171,6 @@ export function NetSuiteIntegrationCard() {
         }
         body.documentUploadFolderId = n;
       }
-      const docType = (payload.restletTypeDocumentUpload ?? '').trim();
-      if (docType) body.restletTypeDocumentUpload = docType;
-      const lineType = (payload.restletTypeLineUpdate ?? '').trim();
-      body.restletTypeLineUpdate = lineType;
-      const dqPage = (payload.documentUploadQueryPage ?? '').trim();
-      if (dqPage) body.documentUploadQueryPage = dqPage;
-      const dqLimit = (payload.documentUploadQueryLimit ?? '').trim();
-      if (dqLimit) body.documentUploadQueryLimit = dqLimit;
       if (payload.consumerKey?.trim()) body.consumerKey = payload.consumerKey.trim();
       if (payload.consumerSecret?.trim()) body.consumerSecret = payload.consumerSecret.trim();
       if (payload.tokenId?.trim()) body.tokenId = payload.tokenId.trim();
@@ -199,30 +205,53 @@ export function NetSuiteIntegrationCard() {
     onError: (e: Error) => toast({ title: 'Test failed', description: e.message, variant: 'destructive' }),
   });
 
-  const syncVendorsMutation = useMutation({
-    mutationFn: () => postNetSuiteSyncVendors(),
+  const listFoldersMutation = useMutation({
+    mutationFn: () => postNetSuiteFoldersList({ page: 1, limit: 100 }),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['org', 'integrations', 'netsuite'] });
-      queryClient.invalidateQueries({ queryKey: ['org', 'vendors'] });
-      toast({
-        title: 'Vendors synced from NetSuite',
-        description: `Total from NetSuite: ${data.totalFromNetSuite ?? 0} · created: ${data.created ?? 0} · updated: ${data.updated ?? 0}`,
-      });
+      const rows = parseFolderRows(data.body);
+      setFolderRows(rows);
+      if (rows.length === 0) {
+        toast({
+          title: 'No folders parsed',
+          description: data.netsuiteErrorSnippet ?? 'Check RESTlet response shape or HTTP error.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({ title: 'Folders loaded', description: `${rows.length} folder(s).` });
     },
-    onError: (e: Error) => toast({ title: 'Sync failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Folder list failed', description: e.message, variant: 'destructive' }),
   });
 
-  const syncPoMutation = useMutation({
-    mutationFn: () => postNetSuiteSyncPurchaseOrders(),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['org', 'integrations', 'netsuite'] });
-      queryClient.invalidateQueries({ queryKey: ['org', 'pos'] });
-      toast({
-        title: 'Purchase orders synced from NetSuite',
-        description: `POs from NetSuite: ${data.purchaseOrdersFromNetSuite ?? 0} · lines written: ${data.lineItemsWritten ?? 0}`,
+  const createFolderMutation = useMutation({
+    mutationFn: () => {
+      const pid = Number(createParentId);
+      if (!Number.isFinite(pid) || pid < 1) {
+        return Promise.reject(new Error('Parent folder ID must be a positive number'));
+      }
+      if (!createName.trim()) return Promise.reject(new Error('Folder name is required'));
+      return postNetSuiteFoldersCreate({
+        parentfolderId: pid,
+        folderName: createName.trim(),
+        description: createDesc.trim() || undefined,
       });
     },
-    onError: (e: Error) => toast({ title: 'PO sync failed', description: e.message, variant: 'destructive' }),
+    onSuccess: (data) => {
+      if (data.netsuiteHttpStatus >= 200 && data.netsuiteHttpStatus < 300) {
+        toast({ title: 'Folder created', description: 'Refresh the folder list to pick the new folder.' });
+        setCreateParentId('');
+        setCreateName('');
+        setCreateDesc('');
+        setCreateFolderDialogOpen(false);
+      } else {
+        toast({
+          title: 'Create folder failed',
+          description: data.netsuiteErrorSnippet ?? `HTTP ${data.netsuiteHttpStatus}`,
+          variant: 'destructive',
+        });
+      }
+    },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
   const saveScheduleMutation = useMutation({
@@ -263,6 +292,11 @@ export function NetSuiteIntegrationCard() {
     );
   }
 
+  const savedFolderId =
+    status?.documentUploadFolderId != null && Number.isFinite(Number(status.documentUploadFolderId))
+      ? Number(status.documentUploadFolderId)
+      : null;
+
   return (
     <Card>
       <CardHeader>
@@ -270,7 +304,7 @@ export function NetSuiteIntegrationCard() {
           <Plug className="h-5 w-5" />
           NetSuite integration
         </CardTitle>
-        <CardDescription>Connect NetSuite and sync vendors and POs.</CardDescription>
+        <CardDescription>Connect NetSuite; file cabinet folder for vendor PL/CI uploads.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {status?.configured && (
@@ -391,80 +425,137 @@ export function NetSuiteIntegrationCard() {
               <Input id="ns-deploy" {...form.register('deployId')} className="mt-1" />
             </div>
           </div>
-          <div className="space-y-3">
-            <p className="text-sm font-medium">RESTlet type parameters (SuiteScript)</p>
-            <div>
-              <Label htmlFor="ns-type-v">Vendors sync</Label>
-              <Input id="ns-type-v" {...form.register('restletTypeVendors')} className="mt-1" />
-            </div>
-            <div>
-              <Label htmlFor="ns-type-po">Purchase orders (for later PO sync)</Label>
-              <Input id="ns-type-po" {...form.register('restletTypePurchaseOrders')} className="mt-1" />
-            </div>
-            <div>
-              <Label htmlFor="ns-type-lines">Purchase line data (for later)</Label>
-              <Input id="ns-type-lines" {...form.register('restletTypePurchaseLineData')} className="mt-1" />
-            </div>
-          </div>
-          <div className="space-y-3 rounded-lg border border-dashed border-border/80 bg-muted/10 p-4">
-            <p className="text-sm font-medium">Vendor files → NetSuite</p>
-            <p className="text-xs text-muted-foreground">
-              After upload, the API sends a <code className="rounded bg-muted px-1">vendorfilesupload</code> POST with a{' '}
-              <code className="rounded bg-muted px-0.5">files</code> array (PDF metadata + base64). When line quantities
-              were validated, it then POSTs <code className="rounded bg-muted px-1">packinglistupdate</code> with{' '}
-              <code className="rounded bg-muted px-0.5">packingLines</code> (PL) or{' '}
-              <code className="rounded bg-muted px-0.5">commercialLines</code> (CI). Use the two RESTlet type fields below
-              for each query <code className="rounded bg-muted px-0.5">type=</code> (or leave line type empty to default to{' '}
-              <code className="rounded bg-muted px-0.5">packinglistupdate</code>). Set the file cabinet folder{' '}
-              <strong>internal id</strong> for uploads.
-            </p>
-            <div>
-              <Label htmlFor="ns-doc-folder">File cabinet folder internal ID</Label>
-              <Input
-                id="ns-doc-folder"
-                type="text"
-                inputMode="numeric"
-                {...form.register('documentUploadFolderId')}
-                className="mt-1"
-                placeholder="e.g. 200"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="ns-doc-type">RESTlet type (file upload POST)</Label>
-                <Input
-                  id="ns-doc-type"
-                  {...form.register('restletTypeDocumentUpload')}
-                  className="mt-1"
-                  placeholder="e.g. vendorfilesupload"
-                />
-              </div>
-              <div>
-                <Label htmlFor="ns-line-type">RESTlet type (line update POST)</Label>
-                <Input
-                  id="ns-line-type"
-                  {...form.register('restletTypeLineUpdate')}
-                  className="mt-1"
-                  placeholder="Blank → packinglistupdate"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Second POST sends JSON <code className="rounded bg-muted px-0.5">packinglistupdate</code> with line
-                  arrays. Override the query <code className="rounded bg-muted px-0.5">type=</code> here if your script uses
-                  a different branch name.
+
+          {status?.configured && (
+            <div className="space-y-3 rounded-lg border border-border/80 bg-muted/10 p-4">
+              <p className="text-sm font-medium">File cabinet folder (PL/CI uploads)</p>
+              {savedFolderId != null ? (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Saved folder internal ID:</span>{' '}
+                  <span className="font-mono font-medium">{savedFolderId}</span>
                 </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No folder selected yet.</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={listFoldersMutation.isPending}
+                  onClick={() => listFoldersMutation.mutate()}
+                >
+                  {listFoldersMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Load folders from NetSuite
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreateFolderDialogOpen(true)}
+                >
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  Create new folder
+                </Button>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:max-w-md">
-                <div>
-                  <Label htmlFor="ns-doc-page">Query page</Label>
-                  <Input id="ns-doc-page" {...form.register('documentUploadQueryPage')} className="mt-1" placeholder="1" />
+              <Dialog open={createFolderDialogOpen} onOpenChange={setCreateFolderDialogOpen}>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Create folder in NetSuite</DialogTitle>
+                    <DialogDescription>
+                      New folder is created in the file cabinet. Reload the list afterward to select it.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-3 py-2">
+                    <div>
+                      <Label htmlFor="ns-new-parent">Parent folder internal ID</Label>
+                      <Input
+                        id="ns-new-parent"
+                        inputMode="numeric"
+                        value={createParentId}
+                        onChange={(e) => setCreateParentId(e.target.value)}
+                        className="mt-1"
+                        placeholder="e.g. 248381"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="ns-new-name">New folder name</Label>
+                      <Input
+                        id="ns-new-name"
+                        value={createName}
+                        onChange={(e) => setCreateName(e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="ns-new-desc">Description (optional)</Label>
+                      <Input
+                        id="ns-new-desc"
+                        value={createDesc}
+                        onChange={(e) => setCreateDesc(e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2 sm:gap-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setCreateFolderDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={createFolderMutation.isPending}
+                      onClick={() => createFolderMutation.mutate()}
+                    >
+                      {createFolderMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Create in NetSuite
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              {folderRows.length > 0 ? (
+                <div className="space-y-2 max-w-md">
+                  <Label>Pick folder</Label>
+                  <Select
+                    value={(() => {
+                      const v = (form.watch('documentUploadFolderId') ?? '').trim();
+                      return v && folderRows.some((f) => String(f.id) === v) ? v : undefined;
+                    })()}
+                    onValueChange={(v) => {
+                      form.setValue('documentUploadFolderId', v, { shouldDirty: true });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a folder…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {folderRows.map((f) => (
+                        <SelectItem key={f.id} value={String(f.id)}>
+                          {f.name} ({f.id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div>
-                  <Label htmlFor="ns-doc-limit">Query limit</Label>
-                  <Input id="ns-doc-limit" {...form.register('documentUploadQueryLimit')} className="mt-1" placeholder="100" />
-                </div>
+              ) : null}
+              <div>
+                <Label htmlFor="ns-doc-folder">Folder internal ID (saved with integration)</Label>
+                <Input
+                  id="ns-doc-folder"
+                  type="text"
+                  inputMode="numeric"
+                  {...form.register('documentUploadFolderId')}
+                  className="mt-1 max-w-xs"
+                  placeholder="e.g. 248994"
+                />
               </div>
             </div>
-          </div>
+          )}
+
           <div className="space-y-3 border-t pt-4">
             <p className="text-sm text-muted-foreground">
               {status?.configured
@@ -495,24 +586,6 @@ export function NetSuiteIntegrationCard() {
             </Button>
             <Button
               type="button"
-              variant="secondary"
-              disabled={!status?.configured || syncVendorsMutation.isPending}
-              onClick={() => syncVendorsMutation.mutate()}
-            >
-              {syncVendorsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Pull vendors from NetSuite
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!status?.configured || syncPoMutation.isPending}
-              onClick={() => syncPoMutation.mutate()}
-            >
-              {syncPoMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sync purchase orders
-            </Button>
-            <Button
-              type="button"
               variant="outline"
               disabled={!status?.configured || testMutation.isPending}
               onClick={() => testMutation.mutate()}
@@ -523,27 +596,27 @@ export function NetSuiteIntegrationCard() {
         </form>
 
         <div className="flex flex-wrap gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button type="button" variant="destructive" disabled={!status?.configured || deleteMutation.isPending}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Remove
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Remove NetSuite integration?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Deletes stored credentials. You can reconfigure later.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => deleteMutation.mutate()}>Remove</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button type="button" variant="destructive" disabled={!status?.configured || deleteMutation.isPending}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Remove
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove NetSuite integration?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Deletes stored credentials. You can reconfigure later.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => deleteMutation.mutate()}>Remove</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </CardContent>
     </Card>
   );

@@ -12,10 +12,9 @@ import { NetSuiteRecordCachePanel } from '../components/NetSuiteRecordCachePanel
 import { DocumentTemplatesPanel } from '../components/DocumentTemplatesPanel';
 import { OrgProfileForm } from '../components/OrgProfileForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
-import { Database, FileSpreadsheet, Key, LayoutGrid, Plug, Settings } from 'lucide-react';
+import { Database, FileSpreadsheet, LayoutGrid, Plug, Settings } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { canFetchNetSuiteCatalog, canManageSettings } from '@/modules/common/constants/roles';
 import type { OrgPreferencesPayload } from '../types';
@@ -210,22 +209,6 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           ) : null}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5" />
-                API tokens
-              </CardTitle>
-              <CardDescription>Integration tokens</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Coming soon.</p>
-              <Button variant="outline" size="sm" className="mt-2" disabled>
-                Manage tokens (soon)
-              </Button>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="preferences" className="space-y-4 focus-visible:ring-0 focus-visible:ring-offset-0">

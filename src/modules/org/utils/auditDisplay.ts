@@ -9,6 +9,16 @@ const EVENT_LABELS: Record<string, string> = {
   QTY_MISMATCH: 'Quantity mismatch (upload validation)',
 };
 
+/** Known eventType values for filters / datalists. */
+export const AUDIT_KNOWN_EVENT_TYPE_KEYS = Object.keys(EVENT_LABELS) as string[];
+
+export const AUDIT_ACTOR_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'ORG_USER', label: 'Org user' },
+  { value: 'ORG_ADMIN', label: 'Org admin' },
+  { value: 'VENDOR_USER', label: 'Vendor user' },
+  { value: 'SYSTEM', label: 'System' },
+];
+
 /** Title-case from SNAKE_CASE, e.g. PO_UPLOADED → Po Uploaded */
 export function formatAuditEventType(eventType: string): string {
   if (!eventType) return '—';

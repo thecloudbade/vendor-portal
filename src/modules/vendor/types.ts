@@ -24,6 +24,10 @@ export interface VendorUploadRules {
   commercialInvoiceQtyTolerancePct: number;
   /** Default true when omitted. */
   blockSubmitOnQtyToleranceExceeded: boolean;
+  /** When false, no new submissions after existing uploads (until org reset in portal / NetSuite). */
+  allowReupload?: boolean;
+  /** Max submissions per PO when reuploads are allowed; default 3 when omitted. */
+  maxReuploadAttempts?: number;
 }
 
 export interface PODetail {
@@ -46,6 +50,11 @@ export interface PODetail {
   createdAt: string;
   updatedAt?: string;
   netsuiteTransId?: string;
+  /**
+   * When false, vendor cannot use the document upload flow until an org admin resets the PO in the portal.
+   * When true/omitted, use `getVendorDocumentUploadAccess` with `uploadRules` and `uploads`.
+   */
+  documentUploadsAllowed?: boolean;
 }
 
 /** Line items from GET /vendor/pos/:id (Mongo / synced from NetSuite). */

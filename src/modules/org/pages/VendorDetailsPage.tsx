@@ -10,7 +10,6 @@ import {
   getOrgPOs,
 } from '../api/org.api';
 import type { VendorDetail, VendorPortalUser, PendingVendorInvitation } from '../types';
-import { PageHeader } from '@/modules/common/components/PageHeader';
 import { EmptyState } from '@/modules/common/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -153,7 +152,8 @@ export function VendorDetailsPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const tabFromUrl = searchParams.get('tab');
-  const activeTab: 'users' | 'pos' = tabFromUrl === 'pos' ? 'pos' : 'users';
+  /** Default: purchase orders first; `?tab=users` for the users tab. */
+  const activeTab: 'pos' | 'users' = tabFromUrl === 'users' ? 'users' : 'pos';
   const poPage = parseListPageParam(searchParams.get('poPage'));
   const poPageSize = 10;
   const poQFromUrl = searchParams.get('poQ') ?? '';
@@ -185,11 +185,11 @@ export function VendorDetailsPage() {
     );
   }, [debouncedPoSearch, setSearchParams]);
 
-  const setActiveTab = (v: 'users' | 'pos') => {
+  const setActiveTab = (v: 'pos' | 'users') => {
     setSearchParams(
       (prev) => {
         const n = new URLSearchParams(prev);
-        if (v === 'pos') n.set('tab', 'pos');
+        if (v === 'users') n.set('tab', 'users');
         else n.delete('tab');
         return n;
       },
@@ -302,48 +302,121 @@ export function VendorDetailsPage() {
           </Link>
         </Button>
       </div>
-      <PageHeader title={vendor.name} description={vendor.vendorCode ? `Code: ${vendor.vendorCode}` : undefined} />
 
-      <div className="flex flex-wrap gap-2">
-        <span
-          className={
-            approved
-              ? 'rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground'
-              : 'rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
-          }
-        >
-          {approved ? 'Approved' : 'Pending approval'}
-        </span>
-        {vendor.inactive && (
-          <span className="rounded-full border border-border px-2 py-0.5 text-xs">Inactive</span>
-        )}
-        {vendor.category && (
-          <span className="rounded-full border border-border px-2 py-0.5 text-xs">{vendor.category}</span>
+      <div className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0 space-y-1.5">
+          <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            <span className="min-w-0 break-words">{vendor.name}</span>
+            <span
+              className={
+                approved
+                  ? 'inline-flex shrink-0 items-center rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground'
+                  : 'inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground'
+              }
+            >
+              {approved ? 'Approved' : 'Pending approval'}
+            </span>
+            {vendor.inactive && (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs">
+                Inactive
+              </span>
+            )}
+            {vendor.category && (
+              <span className="inline-flex shrink-0 max-w-full truncate rounded-full border border-border px-2 py-0.5 text-xs">
+                {vendor.category}
+              </span>
+            )}
+          </h1>
+          {vendor.vendorCode ? (
+            <p className="text-sm text-muted-foreground">Code: {vendor.vendorCode}</p>
+          ) : null}
+        </div>
+        {!approved && (
+          <Button
+            onClick={() => approveMutation.mutate()}
+            disabled={approveMutation.isPending}
+            className="w-full gap-2 sm:w-auto sm:shrink-0"
+            size="sm"
+          >
+            {approveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            Approve vendor
+          </Button>
         )}
       </div>
 
-      {!approved && (
-        <Button onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending} className="gap-2">
-          {approveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4" />
-          )}
-          Approve vendor
-        </Button>
-      )}
-
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'users' | 'pos')} className="w-full">
-        <TabsList className="w-full max-w-md justify-start sm:w-auto">
-          <TabsTrigger value="users" className="gap-2">
-            <Users className="h-4 w-4" />
-            Users
-          </TabsTrigger>
-          <TabsTrigger value="pos" className="gap-2">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'pos' | 'users')} className="w-full">
+        <TabsList className="h-auto w-full max-w-md flex-wrap justify-start gap-1 sm:w-auto">
+          <TabsTrigger value="pos" className="gap-1.5">
             <ShoppingCart className="h-4 w-4" />
             Purchase orders
           </TabsTrigger>
+          <TabsTrigger value="users" className="gap-1.5">
+            <Users className="h-4 w-4" />
+            Users
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="pos">
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 space-y-0">
+              <div className="space-y-1">
+                <CardTitle className="text-lg">Purchase orders</CardTitle>
+                <p className="text-sm text-muted-foreground">Orders for this vendor.</p>
+              </div>
+              {canSyncPOsUi ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 gap-2"
+                  disabled={syncPOMutation.isPending}
+                  onClick={() => syncPOMutation.mutate()}
+                >
+                  {syncPOMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Sync from NetSuite
+                </Button>
+              ) : canSyncFromNetSuite ? (
+                <p className="max-w-xs text-xs text-muted-foreground">Admins can sync. Ask an org admin.</p>
+              ) : (
+                <p className="max-w-xs text-xs text-muted-foreground">Connect NetSuite in Settings to sync.</p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by PO number…"
+                  value={poSearch}
+                  onChange={(e) => setPoSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+
+              <DataTable<POListItem>
+                columns={poColumns}
+                data={posData?.data ?? []}
+                keyExtractor={(r) => r.id}
+                onRowClick={(r) => navigate(ROUTES.ORG.PO_DETAIL(r.id), { state: listBack })}
+                total={posData?.total ?? 0}
+                page={poPage}
+                pageSize={poPageSize}
+                onPageChange={setPoPage}
+                isLoading={posLoading}
+                emptyIcon={ShoppingCart}
+                emptyTitle="No purchase orders for this vendor"
+                emptyMessage="Sync above or add POs elsewhere."
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="users">
           <Card>
@@ -414,64 +487,6 @@ export function VendorDetailsPage() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="pos">
-          <Card>
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 space-y-0">
-              <div className="space-y-1">
-                <CardTitle className="text-lg">Purchase orders</CardTitle>
-                <p className="text-sm text-muted-foreground">Orders for this vendor.</p>
-              </div>
-              {canSyncPOsUi ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0 gap-2"
-                  disabled={syncPOMutation.isPending}
-                  onClick={() => syncPOMutation.mutate()}
-                >
-                  {syncPOMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                  Sync from NetSuite
-                </Button>
-              ) : canSyncFromNetSuite ? (
-                <p className="max-w-xs text-xs text-muted-foreground">Admins can sync. Ask an org admin.</p>
-              ) : (
-                <p className="max-w-xs text-xs text-muted-foreground">Connect NetSuite in Settings to sync.</p>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search by PO number…"
-                  value={poSearch}
-                  onChange={(e) => setPoSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              <DataTable<POListItem>
-                columns={poColumns}
-                data={posData?.data ?? []}
-                keyExtractor={(r) => r.id}
-                onRowClick={(r) => navigate(ROUTES.ORG.PO_DETAIL(r.id), { state: listBack })}
-                total={posData?.total ?? 0}
-                page={poPage}
-                pageSize={poPageSize}
-                onPageChange={setPoPage}
-                isLoading={posLoading}
-                emptyIcon={ShoppingCart}
-                emptyTitle="No purchase orders for this vendor"
-                emptyMessage="Sync above or add POs elsewhere."
-              />
             </CardContent>
           </Card>
         </TabsContent>

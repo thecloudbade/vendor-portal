@@ -158,17 +158,25 @@ function coerceVendorPoDetail(raw: Record<string, unknown>): PODetail {
     const pl = u.packingListQtyTolerancePct;
     const ci = u.commercialInvoiceQtyTolerancePct;
     const block = u.blockSubmitOnQtyToleranceExceeded;
+    const ar = u.allowReupload;
+    const mar = u.maxReuploadAttempts;
     uploadRules = {
       packingListQtyTolerancePct:
         typeof pl === 'number' && Number.isFinite(pl) ? pl : Number(pl) || 5,
       commercialInvoiceQtyTolerancePct:
         typeof ci === 'number' && Number.isFinite(ci) ? ci : Number(ci) || 5,
       blockSubmitOnQtyToleranceExceeded: block !== false,
+      ...(typeof ar === 'boolean' ? { allowReupload: ar } : {}),
+      ...(mar != null && Number.isFinite(Number(mar)) ? { maxReuploadAttempts: Number(mar) } : {}),
     };
   }
 
   const uploadsRaw = raw.uploads;
   const uploads = Array.isArray(uploadsRaw) ? uploadsRaw.map((u) => mapPoUploadFromApi(u)) : undefined;
+
+  const dua = raw.documentUploadsAllowed ?? raw.document_uploads_allowed;
+  const documentUploadsAllowed =
+    typeof dua === 'boolean' ? dua : dua === 'true' ? true : dua === 'false' ? false : undefined;
 
   return {
     id: String(raw.id ?? ''),
@@ -194,6 +202,7 @@ function coerceVendorPoDetail(raw: Record<string, unknown>): PODetail {
         : raw.netsuite_trans_id != null
           ? String(raw.netsuite_trans_id)
           : undefined,
+    ...(documentUploadsAllowed !== undefined ? { documentUploadsAllowed } : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getPlatformOrganization } from '../api/platform.api';
 import { PlatformOrgMetricsDashboard } from '../components/PlatformOrgMetricsDashboard';
+import { PlatformNetSuiteRestletTypesForm } from '../components/PlatformNetSuiteRestletTypesForm';
 import { PageHeader } from '@/modules/common/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -95,6 +96,11 @@ export function PlatformOrganizationDetailPage() {
             )}
           </CardContent>
         </Card>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold tracking-tight">NetSuite RESTlet routing</h2>
+        <PlatformNetSuiteRestletTypesForm orgId={data.id} detail={data} />
       </section>
 
       <section className="space-y-3">

@@ -16,6 +16,7 @@ import { ROUTES } from '@/modules/common/constants/routes';
 import { VendorPoBackLink } from '../components/VendorPoBackLink';
 import { useToast } from '@/components/ui/use-toast';
 import { isMongoObjectIdString } from '@/modules/common/utils/mongoId';
+import { getVendorDocumentUploadAccess } from '@/modules/common/utils/vendorPoDocumentUploadAccess';
 import { EmptyState } from '@/modules/common/components/EmptyState';
 import { Download, FileText, Loader2, Upload, ArrowRight } from 'lucide-react';
 import { backToState } from '@/modules/common/utils/navigationState';
@@ -197,6 +198,34 @@ export function UploadPage() {
           icon={FileText}
           title="Purchase order not found"
           description="This PO may not exist or you may not have access."
+        />
+      </div>
+    );
+  }
+
+  const docAccess = useMemo(() => getVendorDocumentUploadAccess(po), [po]);
+  if (!docAccess.allowed) {
+    return (
+      <div className="space-y-4">
+        <VendorPoBackLink />
+        <PageHeader
+          title="Upload documents"
+          description={po ? `PO: ${po.poNumber}` : undefined}
+          actions={
+            <Button variant="outline" size="sm" className="gap-2" asChild>
+              <Link to={ROUTES.VENDOR.PO_DETAIL(poId!)} state={listBack}>
+                <FileText className="h-4 w-4" />
+                View PO
+              </Link>
+            </Button>
+          }
+        />
+        <EmptyState
+          icon={FileText}
+          title="Uploads are not available for this order"
+          description={
+            docAccess.reason ?? 'Your buyer has restricted further submissions for this purchase order.'
+          }
         />
       </div>
     );

@@ -36,6 +36,8 @@ import type {
   OnboardingChecklistData,
   OnboardingTask,
   OrgProfilePutPayload,
+  OrgPOResetPackingListPayload,
+  OrgPOResetPackingListResult,
 } from '../types';
 
 function asArray<T>(raw: unknown): T[] {
@@ -359,14 +361,22 @@ function coerceOrgPODetail(raw: Record<string, unknown>): PODetail {
     const pl = u.packingListQtyTolerancePct;
     const ci = u.commercialInvoiceQtyTolerancePct;
     const block = u.blockSubmitOnQtyToleranceExceeded;
+    const ar = u.allowReupload;
+    const mar = u.maxReuploadAttempts;
     uploadRules = {
       packingListQtyTolerancePct:
         typeof pl === 'number' && Number.isFinite(pl) ? pl : Number(pl) || 5,
       commercialInvoiceQtyTolerancePct:
         typeof ci === 'number' && Number.isFinite(ci) ? ci : Number(ci) || 5,
       blockSubmitOnQtyToleranceExceeded: block !== false,
+      ...(typeof ar === 'boolean' ? { allowReupload: ar } : {}),
+      ...(mar != null && Number.isFinite(Number(mar)) ? { maxReuploadAttempts: Number(mar) } : {}),
     };
   }
+
+  const dua = raw.documentUploadsAllowed ?? raw.document_uploads_allowed;
+  const documentUploadsAllowed =
+    typeof dua === 'boolean' ? dua : dua === 'true' ? true : dua === 'false' ? false : undefined;
 
   return {
     id: String(raw.id ?? ''),
@@ -392,6 +402,7 @@ function coerceOrgPODetail(raw: Record<string, unknown>): PODetail {
         : raw.netsuite_trans_id != null
           ? String(raw.netsuite_trans_id)
           : undefined,
+    ...(documentUploadsAllowed !== undefined ? { documentUploadsAllowed } : {}),
   };
 }
 
@@ -402,6 +413,21 @@ export async function getOrgPODetail(poId: string) {
       const coerced = coerceOrgPODetail(unwrapped);
       return mapPODetailNetsuiteId(coerced);
     })
+  );
+}
+
+/**
+ * POST /org/pos/:poId/reset-packing — clear NetSuite packing list / commercial invoice qty lines
+ * and reopen vendor uploads (when the API also sets `documentUploadsAllowed` / clears portal state).
+ */
+export async function postOrgPOResetPackingList(poId: string, body: OrgPOResetPackingListPayload) {
+  return withRefreshRetry(() =>
+    http
+      .post<OrgPOResetPackingListResult | Record<string, unknown>>(
+        `/org/pos/${encodeURIComponent(poId)}/reset-packing`,
+        body
+      )
+      .then((raw) => (raw && typeof raw === 'object' ? (raw as OrgPOResetPackingListResult) : {}))
   );
 }
 
@@ -578,6 +604,31 @@ export async function getNetSuiteIntegration() {
 
 export async function putNetSuiteIntegration(payload: NetSuiteIntegrationPutPayload) {
   return withRefreshRetry(() => http.put<NetSuiteIntegrationStatus>('/org/integrations/netsuite', payload));
+}
+
+export interface NetSuiteFolderListEnvelope {
+  netsuiteHttpStatus: number;
+  body: unknown;
+  urlRedacted?: string;
+  netsuiteErrorSnippet?: string | null;
+}
+
+/** POST /org/integrations/netsuite/folders/list — signed GET `type=getfoldersdata` */
+export async function postNetSuiteFoldersList(body?: { page?: number; limit?: number }) {
+  return withRefreshRetry(() =>
+    http.post<NetSuiteFolderListEnvelope>('/org/integrations/netsuite/folders/list', body ?? {})
+  );
+}
+
+/** POST /org/integrations/netsuite/folders/create — RESTlet POST with `type: createnewfolder` in JSON body */
+export async function postNetSuiteFoldersCreate(body: {
+  parentfolderId: number;
+  folderName: string;
+  description?: string;
+}) {
+  return withRefreshRetry(() =>
+    http.post<NetSuiteFolderListEnvelope>('/org/integrations/netsuite/folders/create', body)
+  );
 }
 
 /** PUT /org/integrations/netsuite/sync-schedule — ORG_ADMIN; scheduled sync preferences only */
@@ -1426,6 +1477,11 @@ export async function getAuditLog(params?: {
   eventType?: string;
   vendorId?: string;
   poId?: string;
+  /** Inclusive start date (ISO date `YYYY-MM-DD`); backend may map to `createdAt` range. */
+  from?: string;
+  /** Inclusive end date (ISO date `YYYY-MM-DD`). */
+  to?: string;
+  actorType?: string;
 }) {
   return withRefreshRetry(() =>
     http.get<unknown>('/org/audit', { params }).then((raw) => {

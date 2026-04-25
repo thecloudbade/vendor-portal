@@ -18,9 +18,21 @@ export interface PlatformOrgListItem {
   metrics?: PlatformOrgMetrics;
 }
 
+/** PUT /platform/organizations/:orgId/netsuite-restlet-types — per-tenant RESTlet `type=` overrides */
+export interface PlatformNetsuiteRestletTypesPayload {
+  restletTypeVendors?: string | null;
+  restletTypePurchaseOrders?: string | null;
+  restletTypePurchaseLineData?: string | null;
+  restletTypeRecordTypes?: string | null;
+  restletTypeMetadata?: string | null;
+  restletTypeDocumentUpload?: string | null;
+  restletTypeLineUpdate?: string | null;
+}
+
 export interface PlatformOrgDetail extends PlatformOrgListItem {
   updatedAt?: string;
   metrics?: PlatformOrgMetrics;
+  platformNetsuiteRestletTypes?: PlatformNetsuiteRestletTypesPayload | null;
 }
 
 export interface PlatformOrganizationsResult {

@@ -1,6 +1,6 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAuditLog } from '../api/org.api';
+import { getAuditLog, getVendors } from '../api/org.api';
 import type { AuditLogEntry } from '../types';
 import { PageHeader } from '@/modules/common/components/PageHeader';
 import { DataTable } from '@/modules/common/components/DataTable';
@@ -8,12 +8,32 @@ import type { Column } from '@/modules/common/components/DataTable';
 import { formatDateTime } from '@/modules/common/utils/format';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { QtyMismatchRowsTable } from '../components/QtyMismatchRowsTable';
-import { formatAuditActorType, formatAuditEventType, shortId } from '../utils/auditDisplay';
+import {
+  AUDIT_ACTOR_TYPE_OPTIONS,
+  AUDIT_KNOWN_EVENT_TYPE_KEYS,
+  formatAuditActorType,
+  formatAuditEventType,
+  shortId,
+} from '../utils/auditDisplay';
 import { ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parseListPageParam } from '@/modules/common/utils/listUrlParams';
 import { backToState } from '@/modules/common/utils/navigationState';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useDebounce } from '@/modules/common/hooks/useDebounce';
+
+const ALL = '__all__';
+const pageSize = 20;
 
 function actorTypeStyles(actorType: string): string {
   const t = actorType.toUpperCase();
@@ -24,18 +44,84 @@ function actorTypeStyles(actorType: string): string {
   return 'bg-muted/80 text-foreground ring-1 ring-border/60';
 }
 
+function trim(s: string | null | undefined): string | undefined {
+  const t = s != null ? String(s).trim() : '';
+  return t === '' ? undefined : t;
+}
+
 export function AuditPage() {
   const location = useLocation();
   const auditBack = useMemo(() => backToState(location.pathname, location.search), [location.pathname, location.search]);
   const [searchParams, setSearchParams] = useSearchParams();
+
   const page = parseListPageParam(searchParams.get('page'));
-  const pageSize = 20;
-  const eventTypeRaw = searchParams.get('eventType');
-  const eventType =
-    eventTypeRaw != null && String(eventTypeRaw).trim() !== '' ? String(eventTypeRaw).trim() : undefined;
-  const poIdFilterRaw = searchParams.get('poId');
-  const poIdFilter =
-    poIdFilterRaw != null && String(poIdFilterRaw).trim() !== '' ? String(poIdFilterRaw).trim() : undefined;
+  const from = trim(searchParams.get('from'));
+  const to = trim(searchParams.get('to'));
+  const vendorId = trim(searchParams.get('vendorId'));
+  const eventType = trim(searchParams.get('eventType'));
+  const poId = trim(searchParams.get('poId'));
+  const actorType = trim(searchParams.get('actorType'));
+
+  const [eventTypeInput, setEventTypeInput] = useState(eventType ?? '');
+  const [poIdInput, setPoIdInput] = useState(poId ?? '');
+  const debouncedEventType = useDebounce(eventTypeInput.trim(), 300);
+  const debouncedPoId = useDebounce(poIdInput.trim(), 300);
+
+  useEffect(() => {
+    setEventTypeInput(eventType ?? '');
+  }, [eventType]);
+  useEffect(() => {
+    setPoIdInput(poId ?? '');
+  }, [poId]);
+
+  useEffect(() => {
+    const nextE = debouncedEventType || undefined;
+    if (nextE === eventType) return;
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (nextE) n.set('eventType', nextE);
+        else n.delete('eventType');
+        n.delete('page');
+        return n;
+      },
+      { replace: true }
+    );
+  }, [debouncedEventType, eventType, setSearchParams]);
+
+  useEffect(() => {
+    const nextP = debouncedPoId || undefined;
+    if (nextP === poId) return;
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (nextP) n.set('poId', nextP);
+        else n.delete('poId');
+        n.delete('page');
+        return n;
+      },
+      { replace: true }
+    );
+  }, [debouncedPoId, poId, setSearchParams]);
+
+  const patchParams = useCallback(
+    (patch: Record<string, string | null | undefined>, options?: { resetPage?: boolean }) => {
+      const resetPage = options?.resetPage !== false;
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          for (const [k, v] of Object.entries(patch)) {
+            if (v == null || v === '' || v === ALL) n.delete(k);
+            else n.set(k, v);
+          }
+          if (resetPage) n.delete('page');
+          return n;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
 
   const setPage = (p: number) => {
     setSearchParams(
@@ -49,14 +135,31 @@ export function AuditPage() {
     );
   };
 
+  const hasFilters = Boolean(from || to || vendorId || eventType || poId || actorType);
+
+  const { data: vendorsRes } = useQuery({
+    queryKey: ['org', 'vendors', 'audit-filter'],
+    queryFn: () => getVendors(),
+  });
+  const vendors = vendorsRes?.data ?? [];
+  const vendorOrphan = Boolean(vendorId && !vendors.some((v) => v.id === vendorId));
+
   const { data, isLoading } = useQuery({
-    queryKey: ['org', 'audit', { page, pageSize, eventType, poId: poIdFilter }],
+    queryKey: [
+      'org',
+      'audit',
+      { page, pageSize, from, to, vendorId, eventType, poId, actorType },
+    ],
     queryFn: () =>
       getAuditLog({
         page,
         pageSize,
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+        ...(vendorId ? { vendorId } : {}),
         ...(eventType ? { eventType } : {}),
-        ...(poIdFilter ? { poId: poIdFilter } : {}),
+        ...(poId ? { poId } : {}),
+        ...(actorType ? { actorType } : {}),
       }),
   });
 
@@ -185,32 +288,117 @@ export function AuditPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Audit log"
-        description="Activity and sign-in events."
-      />
+      <PageHeader title="Audit log" description="Activity and sign-in events. Combine filters; all query params are reflected in the URL." />
 
-      {eventType || poIdFilter ? (
-        <p className="text-sm text-muted-foreground">
-          {eventType ? (
-            <>
-              Event:{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{eventType}</code>
-              {poIdFilter ? ' · ' : null}
-            </>
-          ) : null}
-          {poIdFilter ? (
-            <>
-              PO:{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{shortId(poIdFilter, 24)}</code>
-            </>
-          ) : null}
-          .{' '}
-          <Link to={ROUTES.ORG.AUDIT} replace className="font-medium text-primary underline-offset-4 hover:underline">
-            Clear filters
-          </Link>
-        </p>
-      ) : null}
+      <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+        <p className="mb-3 text-sm font-medium text-foreground">Filters</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="audit-from">From date</Label>
+            <Input
+              id="audit-from"
+              type="date"
+              value={from ?? ''}
+              onChange={(e) => patchParams({ from: e.target.value || null })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="audit-to">To date</Label>
+            <Input
+              id="audit-to"
+              type="date"
+              value={to ?? ''}
+              onChange={(e) => patchParams({ to: e.target.value || null })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vendor</Label>
+            <Select
+              value={vendorId || ALL}
+              onValueChange={(v) => patchParams({ vendorId: v === ALL ? null : v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All vendors" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All vendors</SelectItem>
+                {vendorOrphan && vendorId ? (
+                  <SelectItem value={vendorId} className="font-mono text-xs">
+                    Filter: {shortId(vendorId, 12)} (not in directory)
+                  </SelectItem>
+                ) : null}
+                {vendors.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.vendorName || v.vendorCode || v.id} ({v.vendorCode || shortId(v.id, 8)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Actor</Label>
+            <Select
+              value={actorType ?? ALL}
+              onValueChange={(v) => patchParams({ actorType: v === ALL ? null : v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All actors" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All actor types</SelectItem>
+                {AUDIT_ACTOR_TYPE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="audit-event">Event type</Label>
+            <Input
+              id="audit-event"
+              value={eventTypeInput}
+              onChange={(e) => setEventTypeInput(e.target.value)}
+              placeholder="e.g. QTY_MISMATCH or INVITATION_SENT"
+              className="font-mono text-sm"
+              list="audit-event-suggestions"
+              autoComplete="off"
+            />
+            <datalist id="audit-event-suggestions">
+              {AUDIT_KNOWN_EVENT_TYPE_KEYS.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+            <p className="text-[11px] text-muted-foreground">Matches events with this code (suggestions in dropdown)</p>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="audit-po">PO id</Label>
+            <Input
+              id="audit-po"
+              value={poIdInput}
+              onChange={(e) => setPoIdInput(e.target.value)}
+              placeholder="24-character purchase order id"
+              className="font-mono text-sm"
+            />
+          </div>
+        </div>
+        {hasFilters ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <p className="text-xs text-muted-foreground">
+              Active:{' '}
+              {[from && `from ${from}`, to && `to ${to}`, vendorId && 'vendor', eventType && `event ${eventType}`, poId && 'PO', actorType && 'actor']
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            <Button type="button" variant="ghost" size="sm" asChild>
+              <Link to={ROUTES.ORG.AUDIT} replace>
+                Clear all filters
+              </Link>
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       <DataTable<AuditLogEntry>
         data={data?.data ?? []}
@@ -222,10 +410,10 @@ export function AuditPage() {
         onPageChange={setPage}
         isLoading={isLoading}
         emptyIcon={ScrollText}
-        emptyTitle={eventType ? 'No matching events' : 'No audit activity yet'}
+        emptyTitle={hasFilters ? 'No matching events' : 'No audit activity yet'}
         emptyMessage={
-          eventType
-            ? 'Try clearing the event filter or pick another page.'
+          hasFilters
+            ? 'Try widening the date range, removing a filter, or pick another page.'
             : 'Events such as OTP requests, invitations, and vendor user list views will appear here when your backend records them.'
         }
         countLabelSingular="audit event"
