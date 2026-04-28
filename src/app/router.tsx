@@ -25,6 +25,11 @@ const OrgAdminSignupPage = lazy(() =>
   import('@/modules/auth/pages/OrgAdminSignupPage').then((m) => ({ default: m.OrgAdminSignupPage }))
 );
 
+const PlatformOverviewPage = lazy(() =>
+  import('@/modules/platform/pages/PlatformOverviewPage').then((m) => ({
+    default: m.PlatformOverviewPage,
+  }))
+);
 const PlatformOrganizationsPage = lazy(() =>
   import('@/modules/platform/pages/PlatformOrganizationsPage').then((m) => ({
     default: m.PlatformOrganizationsPage,
@@ -33,6 +38,11 @@ const PlatformOrganizationsPage = lazy(() =>
 const PlatformOrganizationDetailPage = lazy(() =>
   import('@/modules/platform/pages/PlatformOrganizationDetailPage').then((m) => ({
     default: m.PlatformOrganizationDetailPage,
+  }))
+);
+const PlatformSessionsPage = lazy(() =>
+  import('@/modules/platform/pages/PlatformSessionsPage').then((m) => ({
+    default: m.PlatformSessionsPage,
   }))
 );
 
@@ -153,6 +163,14 @@ const router = createBrowserRouter(
               index: true,
               element: (
                 <Suspense fallback={<SuspenseFallback />}>
+                  <PlatformOverviewPage />
+                </Suspense>
+              ),
+            },
+            {
+              path: 'organizations',
+              element: (
+                <Suspense fallback={<SuspenseFallback />}>
                   <PlatformOrganizationsPage />
                 </Suspense>
               ),
@@ -162,6 +180,14 @@ const router = createBrowserRouter(
               element: (
                 <Suspense fallback={<SuspenseFallback />}>
                   <PlatformOrganizationDetailPage />
+                </Suspense>
+              ),
+            },
+            {
+              path: 'sessions',
+              element: (
+                <Suspense fallback={<SuspenseFallback />}>
+                  <PlatformSessionsPage />
                 </Suspense>
               ),
             },

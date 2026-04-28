@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,6 +20,7 @@ import { AuthPageShell } from '../components/AuthPageShell';
 import { VendorFlowLogo } from '../components/VendorFlowLogo';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ApiBusinessError } from '@/services/http/client';
 
 const otpOnlySchema = z.object({
   email: z.string().email('Enter a valid work email').toLowerCase().trim(),
@@ -43,6 +44,11 @@ export function LoginPage() {
   const location = useLocation();
   const { toast } = useToast();
   const [mode, setMode] = useState<SignInMode>('mfa');
+  const [needsPlatformLogin, setNeedsPlatformLogin] = useState(false);
+
+  useEffect(() => {
+    setNeedsPlatformLogin(false);
+  }, [mode]);
 
   const otpForm = useForm<OtpOnlyValues>({
     resolver: zodResolver(otpOnlySchema),
@@ -66,6 +72,7 @@ export function LoginPage() {
 
   const onOtpOnly = async (data: OtpOnlyValues) => {
     try {
+      setNeedsPlatformLogin(false);
       try {
         sessionStorage.removeItem(MFA_TOKEN_STORAGE_KEY);
       } catch {
@@ -75,6 +82,14 @@ export function LoginPage() {
       const devOtp = takeOtpFromResponseForClientUi(res);
       goVerify(data.email, devOtp);
     } catch (e) {
+      if (e instanceof ApiBusinessError && e.code === 'USE_PLATFORM_OTP') {
+        setNeedsPlatformLogin(true);
+        toast({
+          title: 'Use platform sign-in',
+          description: 'This email uses the platform administrator login.',
+        });
+        return;
+      }
       toast({
         title: 'Couldn’t send code',
         description: e instanceof Error ? e.message : 'Please try again in a moment.',
@@ -85,6 +100,7 @@ export function LoginPage() {
 
   const onMfa = async (data: MfaValues) => {
     try {
+      setNeedsPlatformLogin(false);
       const res = await loginOrgVendorPassword({ email: data.email, password: data.password });
       try {
         sessionStorage.setItem(MFA_TOKEN_STORAGE_KEY, res.mfaToken);
@@ -94,6 +110,14 @@ export function LoginPage() {
       const devOtp = takeOtpFromResponseForClientUi(res);
       goVerify(data.email, devOtp);
     } catch (e) {
+      if (e instanceof ApiBusinessError && e.code === 'USE_PLATFORM_OTP') {
+        setNeedsPlatformLogin(true);
+        toast({
+          title: 'Use platform sign-in',
+          description: 'This email uses the platform administrator login.',
+        });
+        return;
+      }
       const msg = e instanceof Error ? e.message : 'Sign-in failed';
       toast({
         title: 'Sign-in failed',
@@ -252,6 +276,16 @@ export function LoginPage() {
             </CardContent>
           </Card>
         </div>
+
+        {needsPlatformLogin ? (
+          <div className="mt-4 rounded-xl border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3 text-center dark:bg-violet-500/10">
+            <p className="text-sm font-medium text-foreground">Platform administrator</p>
+            <p className="mt-1 text-xs text-muted-foreground">Continue on the platform sign-in page.</p>
+            <Button className="mt-3 h-10 w-full rounded-lg text-sm font-semibold" variant="secondary" asChild>
+              <Link to={ROUTES.PLATFORM.LOGIN}>Platform sign-in</Link>
+            </Button>
+          </div>
+        ) : null}
 
         <p className="mt-3 text-center text-[10px] leading-tight text-muted-foreground/90">
           Secure sign-in · MFA and email codes

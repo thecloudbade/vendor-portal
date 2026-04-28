@@ -61,3 +61,49 @@ export interface InviteOrgAdminResult {
   token?: string;
   signupUrl?: string;
 }
+
+/** GET /platform/sessions — optional; SUPERADMIN audit of active tokens / sessions */
+export interface PlatformSessionRow {
+  id?: string;
+  sessionId?: string;
+  userId?: string;
+  email?: string;
+  userType?: string;
+  organizationId?: string;
+  organizationName?: string;
+  role?: string;
+  createdAt?: string;
+  expiresAt?: string;
+  lastActiveAt?: string;
+  ip?: string;
+  userAgent?: string;
+  [key: string]: unknown;
+}
+
+/** GET /platform/organizations/:orgId/purchase-orders — optional tenant-scoped PO listing */
+export interface PlatformTenantPurchaseOrderRow {
+  id: string;
+  poNumber?: string;
+  status?: string;
+  vendorId?: string;
+  vendorName?: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+/** GET /platform/organizations/:orgId/vendors — optional tenant vendor listing */
+export interface PlatformTenantVendorRow {
+  id: string;
+  name?: string;
+  email?: string;
+  status?: string;
+  updatedAt?: string;
+}
+
+export interface PlatformPaginatedRows<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages?: number;
+}

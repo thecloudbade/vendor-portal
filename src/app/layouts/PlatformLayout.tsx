@@ -4,14 +4,36 @@ import { logout } from '@/modules/auth/api/auth.api';
 import { APP_NAME } from '@/modules/common/constants/branding';
 import { ROUTES, PLATFORM_BASE } from '@/modules/common/constants/routes';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, LogOut } from 'lucide-react';
+import { Building2, LayoutDashboard, LogOut, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const nav = [{ to: ROUTES.PLATFORM.DASHBOARD, label: 'Organizations', icon: LayoutDashboard }];
-
-function isOrgNavActive(pathname: string) {
-  return pathname === ROUTES.PLATFORM.DASHBOARD || pathname.startsWith(`${PLATFORM_BASE}/organizations`);
-}
+const nav: {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  active: (pathname: string) => boolean;
+}[] = [
+  {
+    to: ROUTES.PLATFORM.DASHBOARD,
+    label: 'Overview',
+    icon: LayoutDashboard,
+    active: (pathname) =>
+      pathname === ROUTES.PLATFORM.DASHBOARD || pathname === `${PLATFORM_BASE}/`,
+  },
+  {
+    to: ROUTES.PLATFORM.ORGANIZATIONS,
+    label: 'Organizations',
+    icon: Building2,
+    active: (pathname) => pathname.startsWith(`${PLATFORM_BASE}/organizations`),
+  },
+  {
+    to: ROUTES.PLATFORM.SESSIONS,
+    label: 'Sessions',
+    icon: Radio,
+    active: (pathname) =>
+      pathname === ROUTES.PLATFORM.SESSIONS || pathname.startsWith(`${PLATFORM_BASE}/sessions`),
+  },
+];
 
 export function PlatformLayout() {
   const { user } = useAuth();
@@ -35,7 +57,7 @@ export function PlatformLayout() {
 
         <nav className="flex flex-1 flex-col gap-0.5">
           {nav.map((item) => {
-            const active = isOrgNavActive(location.pathname);
+            const active = item.active(location.pathname);
             return (
               <Link
                 key={item.to}

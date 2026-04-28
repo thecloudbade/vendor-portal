@@ -166,10 +166,18 @@ export function PlatformOrganizationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader
-          title="Organizations"
-          description="Create organizations and invite admins."
-        />
+        <div className="space-y-2">
+          <Link
+            to={ROUTES.PLATFORM.DASHBOARD}
+            className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            ← Platform overview
+          </Link>
+          <PageHeader
+            title="Organizations"
+            description="Create organizations and invite admins."
+          />
+        </div>
         <Button className="shrink-0 rounded-xl" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           New organization

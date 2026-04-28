@@ -327,6 +327,40 @@ function mixedRecord(raw: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/**
+ * NetSuite internal PO (transaction) id — field names vary by API version.
+ * GET /org/pos/:id must surface this for reset-packing; align with list mapping + nested header snapshots.
+ */
+function resolveNetsuiteTransIdFromOrgPORaw(raw: Record<string, unknown>): string | undefined {
+  const topKeys = [
+    'netsuiteTransId',
+    'netsuite_trans_id',
+    'trans_id',
+    'netsuitePoId',
+    'netsuite_po_id',
+    'transactionId',
+    'transaction_id',
+    'netsuiteInternalId',
+    'netsuite_internal_id',
+    'po_id',
+  ];
+  for (const k of topKeys) {
+    const v = raw[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+
+  const nestedBlocks = [raw.netsuiteFields, raw.netsuite_fields, raw.summary, raw.netsuiteHeader, raw.netsuite_header];
+  for (const block of nestedBlocks) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+    const o = block as Record<string, unknown>;
+    for (const k of ['internalid', 'internalId']) {
+      const v = o[k];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+  }
+  return undefined;
+}
+
 function coerceOrgPODetail(raw: Record<string, unknown>): PODetail {
   const itemsUnknown =
     raw.items ??
@@ -386,7 +420,7 @@ function coerceOrgPODetail(raw: Record<string, unknown>): PODetail {
     vendorName: raw.vendorName != null ? String(raw.vendorName) : raw.vendor_name != null ? String(raw.vendor_name) : undefined,
     shipTo: raw.shipTo != null ? String(raw.shipTo) : raw.ship_to != null ? String(raw.ship_to) : undefined,
     summary: mixedRecord(raw.summary),
-    netsuiteFields: mixedRecord(raw.netsuiteFields),
+    netsuiteFields: mixedRecord(raw.netsuiteFields ?? raw.netsuite_fields),
     ...(netsuiteLineFieldLabels && Object.keys(netsuiteLineFieldLabels).length
       ? { netsuiteLineFieldLabels }
       : {}),
@@ -396,12 +430,10 @@ function coerceOrgPODetail(raw: Record<string, unknown>): PODetail {
     ...(uploadRules ? { uploadRules } : {}),
     createdAt: String(raw.createdAt ?? raw.created_at ?? ''),
     updatedAt: raw.updatedAt != null ? String(raw.updatedAt) : raw.updated_at != null ? String(raw.updated_at) : undefined,
-    netsuiteTransId:
-      raw.netsuiteTransId != null
-        ? String(raw.netsuiteTransId)
-        : raw.netsuite_trans_id != null
-          ? String(raw.netsuite_trans_id)
-          : undefined,
+    ...(() => {
+      const tid = resolveNetsuiteTransIdFromOrgPORaw(raw);
+      return tid ? { netsuiteTransId: tid } : {};
+    })(),
     ...(documentUploadsAllowed !== undefined ? { documentUploadsAllowed } : {}),
   };
 }
@@ -840,6 +872,27 @@ function pickItemFieldLabelsRecord(rec: unknown): Record<string, string> {
   return out;
 }
 
+function pickHeaderFieldsRecord(rec: unknown): string[] {
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return [];
+  const r = rec as Record<string, unknown>;
+  const arr = r.header_fields ?? r.headerFields;
+  if (!Array.isArray(arr)) return [];
+  return arr.map((x) => String(x));
+}
+
+function pickHeaderFieldLabelsRecord(rec: unknown): Record<string, string> {
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return {};
+  const r = rec as Record<string, unknown>;
+  const raw = r.header_field_labels ?? r.headerFieldLabels;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v == null || String(v).trim() === '') continue;
+    out[String(k)] = String(v);
+  }
+  return out;
+}
+
 function pruneLabelsToItemFields(
   labels: Record<string, string>,
   itemFields: string[]
@@ -861,24 +914,38 @@ function pickNestedRecord(o: Record<string, unknown>, keys: string[]): unknown {
 }
 
 /**
- * GET/PUT field-config — only `purchase_order_line` (legacy: map from purchase_order if line block missing).
- * Some backends return flat `{ item_fields: [...] }` (same shape as PUT) with no nested `purchase_order_line` object;
- * in that case `polRec` is null and we must read `item_fields` from the root (or `data`).
+ * GET/PUT field-config — `purchase_order_line` for lines; optional `purchase_order` for header tokens.
+ * Legacy: lines-only payload nested under `purchase_order` without `header_fields`; flat `{ item_fields }` at root.
  */
 function mapNetSuiteFieldConfigData(raw: unknown): NetSuiteFieldConfigData {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const polRec =
-    pickNestedRecord(o, [
-      'purchase_order_line',
-      'purchaseorderline',
-      'PURCHASEORDERLINE',
-      'purchaseOrderLine',
-    ]) ?? pickNestedRecord(o, ['purchase_order', 'PURCHASEORDER', 'purchaseOrder']);
-  let item_fields: string[];
-  let item_field_labels: Record<string, string>;
+
+  const polRec = pickNestedRecord(o, [
+    'purchase_order_line',
+    'purchaseorderline',
+    'PURCHASEORDERLINE',
+    'purchaseOrderLine',
+  ]);
+  const poRec = pickNestedRecord(o, ['purchase_order', 'PURCHASEORDER', 'purchaseOrder']);
+
+  let item_fields: string[] = [];
+  let item_field_labels: Record<string, string> = {};
+
   if (polRec) {
     item_fields = pickItemFieldsRecord(polRec);
     item_field_labels = pickItemFieldLabelsRecord(polRec);
+  } else if (poRec) {
+    item_fields = pickItemFieldsRecord(poRec);
+    item_field_labels = pickItemFieldLabelsRecord(poRec);
+    if (item_fields.length === 0) {
+      item_fields = pickItemFieldsRecord(o);
+      item_field_labels = pickItemFieldLabelsRecord(o);
+      if (o.data && typeof o.data === 'object' && !Array.isArray(o.data)) {
+        const d = o.data as Record<string, unknown>;
+        if (item_fields.length === 0) item_fields = pickItemFieldsRecord(d);
+        if (Object.keys(item_field_labels).length === 0) item_field_labels = pickItemFieldLabelsRecord(d);
+      }
+    }
   } else {
     item_fields = pickItemFieldsRecord(o);
     item_field_labels = pickItemFieldLabelsRecord(o);
@@ -888,13 +955,28 @@ function mapNetSuiteFieldConfigData(raw: unknown): NetSuiteFieldConfigData {
       if (Object.keys(item_field_labels).length === 0) item_field_labels = pickItemFieldLabelsRecord(d);
     }
   }
+
   const labelsPruned = pruneLabelsToItemFields(item_field_labels, item_fields);
-  return {
+
+  const header_fields = poRec ? pickHeaderFieldsRecord(poRec) : [];
+  const header_field_labelsRaw = poRec ? pickHeaderFieldLabelsRecord(poRec) : {};
+  const headerLabelsPruned = pruneLabelsToItemFields(header_field_labelsRaw, header_fields);
+
+  const out: NetSuiteFieldConfigData = {
     purchase_order_line: {
       item_fields,
       ...(labelsPruned ? { item_field_labels: labelsPruned } : {}),
     },
   };
+
+  if (header_fields.length > 0 || (headerLabelsPruned && Object.keys(headerLabelsPruned).length > 0)) {
+    out.purchase_order = {
+      header_fields,
+      ...(headerLabelsPruned ? { header_field_labels: headerLabelsPruned } : {}),
+    };
+  }
+
+  return out;
 }
 
 /** Dedicated routes (`record-types/list`, `metadata/fetch`, `field-config/fetch`) may be absent on older df-vendor builds; use `POST .../netsuite/fetch` instead. */
@@ -1069,13 +1151,52 @@ function metadataBodyFieldsFromKeyList(keys: string[]): NetSuiteMetadataFieldRow
   return keys.map((id) => ({ id, name: id }));
 }
 
+function extractMetaFieldsLayer(layer: Record<string, unknown>): NetSuiteMetadataFieldRow[] {
+  const metaRaw =
+    layer.metaFields ??
+    layer.meta_fields ??
+    layer.metaColumns ??
+    layer.recordMetaFields ??
+    layer.record_meta_fields ??
+    layer.extensionMeta ??
+    layer.extension_meta ??
+    layer.meta;
+  return extractMetadataFieldRows(Array.isArray(metaRaw) ? metaRaw : []);
+}
+
+function mergeMetaFieldsLayers(...layers: Record<string, unknown>[]): NetSuiteMetadataFieldRow[] {
+  const seen = new Set<string>();
+  const out: NetSuiteMetadataFieldRow[] = [];
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object') continue;
+    for (const f of extractMetaFieldsLayer(layer)) {
+      const id = String(f.id ?? '').trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 function normalizeMetadataFetch(raw: unknown): NetSuiteMetadataFetchResult {
   const inner = unwrapNetSuiteProxyEnvelope(unwrapNetSuiteIntegrationData(raw));
+  const emptyResult = (): NetSuiteMetadataFetchResult => ({
+    bodyFields: [],
+    sublists: [],
+    metaFields: [],
+  });
+
   if (!inner || typeof inner !== 'object') {
-    return { bodyFields: [], sublists: [] };
+    return emptyResult();
   }
   const innerObj = inner as Record<string, unknown>;
   const o = peelRestletSuccessData(innerObj);
+
+  const attachMeta = (partial: Omit<NetSuiteMetadataFetchResult, 'metaFields'>): NetSuiteMetadataFetchResult => ({
+    ...partial,
+    metaFields: mergeMetaFieldsLayers(o, innerObj),
+  });
 
   // Common RESTlet contract: { header: FieldRow[], sublistFields: { item: FieldRow[], ... } }
   const sublistFieldsRaw = o.sublistFields;
@@ -1083,17 +1204,17 @@ function normalizeMetadataFetch(raw: unknown): NetSuiteMetadataFetchResult {
     const sublists = sublistsFromSublistFieldsRecord(sublistFieldsRaw as Record<string, unknown>);
     const bodyFields = extractMetadataFieldRows(Array.isArray(o.header) ? o.header : []);
     if (sublists.length > 0 || bodyFields.length > 0) {
-      return { bodyFields, sublists };
+      return attachMeta({ bodyFields, sublists });
     }
   }
 
   // peelRestletSuccessData only unwraps `data` when it is a non-array object; array `data` stays on `o`.
   if (Array.isArray(o.data)) {
     const fromFieldRows = extractMetadataFieldRows(o.data);
-    if (fromFieldRows.length > 0) return { bodyFields: fromFieldRows, sublists: [] };
+    if (fromFieldRows.length > 0) return attachMeta({ bodyFields: fromFieldRows, sublists: [] });
     const keysFromRows = extractNetSuiteFieldFetchList(o.data);
     if (keysFromRows.length > 0) {
-      return { bodyFields: metadataBodyFieldsFromKeyList(keysFromRows), sublists: [] };
+      return attachMeta({ bodyFields: metadataBodyFieldsFromKeyList(keysFromRows), sublists: [] });
     }
   }
 
@@ -1108,16 +1229,16 @@ function normalizeMetadataFetch(raw: unknown): NetSuiteMetadataFetchResult {
     [];
   const sublists = extractSublistsFromMetadata(Array.isArray(sublistArraySource) ? sublistArraySource : []);
   if (bodyFields.length === 0 && sublists.length === 0 && Array.isArray(inner)) {
-    return { bodyFields: extractMetadataFieldRows(inner), sublists: [] };
+    return attachMeta({ bodyFields: extractMetadataFieldRows(inner), sublists: [] });
   }
   if (bodyFields.length === 0 && sublists.length === 0) {
     // Same envelope/shape as field-config/fetch (record rows → key union) or SuiteScript list of ids
     const keys = extractNetSuiteFieldFetchList(inner);
     if (keys.length > 0) {
-      return { bodyFields: metadataBodyFieldsFromKeyList(keys), sublists: [] };
+      return attachMeta({ bodyFields: metadataBodyFieldsFromKeyList(keys), sublists: [] });
     }
   }
-  return { bodyFields, sublists };
+  return attachMeta({ bodyFields, sublists });
 }
 
 /** POST .../record-types/list — df-vendor: optional `query` only; server uses RESTlet type recordtypes. */

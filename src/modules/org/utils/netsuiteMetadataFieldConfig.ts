@@ -31,6 +31,36 @@ export function buildBodyFieldOptions(metadata: NetSuiteMetadataFetchResult | un
   return out;
 }
 
+/** Meta / extension columns from POST …/metadata/fetch (`metaFields`). Tokens use `meta_<id>` prefix. */
+export function buildMetaFieldOptions(metadata: NetSuiteMetadataFetchResult | undefined): NetSuiteFieldOption[] {
+  if (!metadata?.metaFields?.length) return [];
+  const out: NetSuiteFieldOption[] = [];
+  for (const f of metadata.metaFields) {
+    const value = normalizeFieldTokenFromParts('meta', f.id);
+    if (!value) continue;
+    out.push({
+      value,
+      label: f.label ?? f.name ?? f.id,
+      detail: f.type ? `Meta · ${f.type}` : 'Meta field',
+    });
+  }
+  return out;
+}
+
+/** First match wins on duplicate `value`; use when merging body + meta pickers. */
+export function mergeFieldOptionsDedupe(...groups: NetSuiteFieldOption[][]): NetSuiteFieldOption[] {
+  const seen = new Set<string>();
+  const out: NetSuiteFieldOption[] = [];
+  for (const group of groups) {
+    for (const o of group) {
+      if (seen.has(o.value)) continue;
+      seen.add(o.value);
+      out.push(o);
+    }
+  }
+  return out;
+}
+
 /** Sublist / line column candidates — primary source for `item_fields` (PO line fetches). */
 export function buildSublistFieldOptions(metadata: NetSuiteMetadataFetchResult | undefined): NetSuiteFieldOption[] {
   if (!metadata) return [];
@@ -58,8 +88,8 @@ export function splitMetadataForFieldConfig(metadata: NetSuiteMetadataFetchResul
   lineFieldCandidates: NetSuiteFieldOption[];
 } {
   return {
-    headerFields: buildBodyFieldOptions(metadata),
-    lineFieldCandidates: buildSublistFieldOptions(metadata),
+    headerFields: mergeFieldOptionsDedupe(buildBodyFieldOptions(metadata), buildMetaFieldOptions(metadata)),
+    lineFieldCandidates: mergeFieldOptionsDedupe(buildMetaFieldOptions(metadata), buildSublistFieldOptions(metadata)),
   };
 }
 

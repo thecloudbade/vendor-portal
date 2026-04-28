@@ -2,8 +2,9 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { downloadOrgFile, getAuditLog, getNetSuiteIntegration, getOrgPODetail, postOrgPOResetPackingList } from '../api/org.api';
+import type { NetSuiteIntegrationStatus, PODetail } from '../types';
 import { PageHeader } from '@/modules/common/components/PageHeader';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ROUTES } from '@/modules/common/constants/routes';
 import { formatDateTime } from '@/modules/common/utils/format';
@@ -20,9 +21,10 @@ import {
   PackageOpen,
   Paperclip,
   RotateCcw,
+  Upload,
 } from 'lucide-react';
 import { resolveBackTo } from '@/modules/common/utils/navigationState';
-import { canViewAudit, isOrgRole } from '@/modules/common/constants/roles';
+import { canInviteVendorUsers, canViewAudit, isOrgRole } from '@/modules/common/constants/roles';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -44,6 +46,47 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { OrgPoUploadSheet } from '../components/OrgPoUploadSheet';
+
+/** NetSuite internal PO id for resetpackinglist — top-level field or header snapshot. */
+function resolveNetSuitePoTransactionId(po: PODetail): number | null {
+  if (po.netsuiteTransId != null && String(po.netsuiteTransId).trim() !== '') {
+    const n = Number(po.netsuiteTransId);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  const nf = po.netsuiteFields;
+  if (nf && typeof nf === 'object') {
+    const o = nf as Record<string, unknown>;
+    for (const k of ['internalid', 'internalId']) {
+      const v = o[k];
+      if (v != null && String(v).trim() !== '') {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return Math.floor(n);
+      }
+    }
+  }
+  const summary = po.summary;
+  if (summary && typeof summary === 'object') {
+    const o = summary as Record<string, unknown>;
+    for (const k of ['internalid', 'internalId']) {
+      const v = o[k];
+      if (v != null && String(v).trim() !== '') {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return Math.floor(n);
+      }
+    }
+  }
+  return null;
+}
+
+function resolveDocumentUploadFolderId(ns: NetSuiteIntegrationStatus | undefined): number | null {
+  if (!ns) return null;
+  const r = ns as NetSuiteIntegrationStatus & Record<string, unknown>;
+  const raw = r.documentUploadFolderId ?? r.document_upload_folder_id;
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
 
 function OrgPoBackLink() {
   const { state } = useLocation();
@@ -63,11 +106,14 @@ export function PODetailsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isOrgUser = user?.userType === 'org' && isOrgRole(user.role ?? '');
+  const canOrgUploadDocs = user?.userType === 'org' && canInviteVendorUsers(user.role ?? '');
   const canLoadAuditFallback =
     user?.userType === 'org' && canViewAudit(user.role ?? '');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
   const [resetPackingOpen, setResetPackingOpen] = useState(false);
+  const [resetBlockedOpen, setResetBlockedOpen] = useState(false);
+  const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const { poId } = useParams<{ poId: string }>();
   const { data: po, isLoading, error } = useQuery({
     queryKey: ['org', 'po', poId],
@@ -80,7 +126,7 @@ export function PODetailsPage() {
     },
   });
 
-  const { data: nsIntegration } = useQuery({
+  const { data: nsIntegration, isLoading: nsIntegrationLoading } = useQuery({
     queryKey: ['org', 'netsuite', 'integration'],
     queryFn: () => getNetSuiteIntegration(),
     enabled: isOrgUser && !!poId,
@@ -88,16 +134,34 @@ export function PODetailsPage() {
 
   const resetPackingPrereq = useMemo(() => {
     if (!po) return { ready: false as const };
-    const tid = po.netsuiteTransId != null ? Number(po.netsuiteTransId) : NaN;
-    const fid = nsIntegration?.documentUploadFolderId;
-    const folderNum = fid != null && Number.isFinite(Number(fid)) ? Number(fid) : NaN;
-    if (!Number.isFinite(tid) || !Number.isFinite(folderNum)) {
+    const tid = resolveNetSuitePoTransactionId(po);
+    const folderNum = resolveDocumentUploadFolderId(nsIntegration);
+    if (tid == null || folderNum == null) {
       return { ready: false as const };
     }
-    return { ready: true as const, transactionId: Math.floor(tid), folderId: Math.floor(folderNum) };
-  }, [po, nsIntegration?.documentUploadFolderId]);
+    return { ready: true as const, transactionId: tid, folderId: folderNum };
+  }, [po, nsIntegration]);
 
-  const canOfferResetPacking = isOrgUser && resetPackingPrereq.ready && (po?.uploads?.length ?? 0) > 0;
+  /** Tooltip + blocked dialog copy */
+  const resetPackingBlockedHint = useMemo(() => {
+    if (!po || resetPackingPrereq.ready) return '';
+    if (nsIntegrationLoading) return 'Loading NetSuite integration settings…';
+    const tidOk = resolveNetSuitePoTransactionId(po) != null;
+    const folderOk = resolveDocumentUploadFolderId(nsIntegration) != null;
+    const parts: string[] = [];
+    if (!tidOk) {
+      parts.push(
+        'No numeric NetSuite internal PO id found on this record (expected netsuiteTransId, trans_id, or internalid on netsuiteFields / summary).'
+      );
+    }
+    if (!folderOk) {
+      parts.push('Configure the NetSuite document upload folder under Settings → NetSuite.');
+    }
+    return parts.join(' ');
+  }, [po, nsIntegration, resetPackingPrereq.ready, nsIntegrationLoading]);
+
+  /** Same cohort as Upload on this PO — org admin / ops can reset vendor uploads when NetSuite prerequisites are met. */
+  const canShowVendorUploadReset = canOrgUploadDocs;
 
   const resetPackingMutation = useMutation({
     mutationFn: () => {
@@ -222,41 +286,15 @@ export function PODetailsPage() {
         }`}
       />
 
-      {canOfferResetPacking && (
-        <Card className="border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/25">
-          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Vendor locked out of reuploads?</p>
-              <p className="text-xs text-muted-foreground">
-                Reset packing list and commercial invoice quantities in NetSuite for this PO. The vendor can submit documents
-                again according to your org rules (e.g. reuploads allowed).
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="shrink-0 gap-2 border-amber-800/20 bg-background dark:border-amber-700/30"
-              onClick={() => setResetPackingOpen(true)}
-              disabled={resetPackingMutation.isPending}
-            >
-              {resetPackingMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <RotateCcw className="h-4 w-4" aria-hidden />
-              )}
-              Reset NetSuite packing / CI
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
       <AlertDialog open={resetPackingOpen} onOpenChange={setResetPackingOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reset packing list and commercial invoice quantities?</AlertDialogTitle>
             <AlertDialogDescription>
-              This calls NetSuite to clear quantity lines for this purchase order. Portal submission history is unchanged, but
-              the vendor is allowed to upload again when your settings permit. This cannot be undone from the portal.
+              This sends{' '}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">resetpackinglist</code> for this NetSuite purchase
+              order so packing list / commercial invoice qty lines clear; the portal can reopen uploads for your vendor based on
+              your policy. Existing submission rows here stay for audit. Not reversible from this app alone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -275,6 +313,37 @@ export function PODetailsPage() {
                 'Reset in NetSuite'
               )}
             </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetBlockedOpen} onOpenChange={setResetBlockedOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Vendor upload reset isn&apos;t ready</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                {nsIntegrationLoading ? (
+                  <p>Loading NetSuite integration settings… try again in a moment.</p>
+                ) : (
+                  <>
+                    <p>
+                      {resetPackingBlockedHint ||
+                        'NetSuite internal PO id and document upload folder must be available before reset can run.'}
+                    </p>
+                    <p>
+                      <Link to={ROUTES.ORG.SETTINGS} className="font-medium text-primary underline underline-offset-2">
+                        Open Settings
+                      </Link>{' '}
+                      to set the document folder, or sync this PO from NetSuite if the internal id is missing.
+                    </p>
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Close</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -374,22 +443,55 @@ export function PODetailsPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Paperclip className="h-5 w-5" />
-            Documents uploaded
-          </CardTitle>
-          {po.uploadRules && (
-            <p className="text-sm text-muted-foreground">
-              Buyer tolerance: packing list ±{po.uploadRules.packingListQtyTolerancePct}%, commercial invoice ±
-              {po.uploadRules.commercialInvoiceQtyTolerancePct}%.
-              {po.uploadRules.blockSubmitOnQtyToleranceExceeded
-                ? ' Uploads that exceed tolerance are blocked until corrected.'
-                : ' Uploads may proceed even when quantities exceed tolerance (logged as exceptions).'}
-            </p>
-          )}
-          <CardDescription>
-            Select a row to open a full detail panel on the right (same pattern as line items below).
-          </CardDescription>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                <Paperclip className="h-5 w-5 shrink-0" />
+                <span>Documents uploaded</span>
+              </CardTitle>
+              {canOrgUploadDocs ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0 gap-2 rounded-lg"
+                  onClick={() => setUploadSheetOpen(true)}
+                >
+                  <Upload className="h-4 w-4" aria-hidden />
+                  Upload
+                </Button>
+              ) : null}
+            </div>
+            {canShowVendorUploadReset ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5 self-start border-amber-600/35 bg-background hover:bg-amber-50 dark:border-amber-600/45 dark:hover:bg-amber-950/40"
+                onClick={() => {
+                  if (resetPackingMutation.isPending) return;
+                  if (resetPackingPrereq.ready) {
+                    setResetPackingOpen(true);
+                  } else {
+                    setResetBlockedOpen(true);
+                  }
+                }}
+                disabled={resetPackingMutation.isPending}
+                title={
+                  resetPackingPrereq.ready
+                    ? 'Clears packing / CI qty lines in NetSuite so the vendor can upload again.'
+                    : resetPackingBlockedHint ||
+                      'Click for details — NetSuite PO id and document folder must be configured.'
+                }
+              >
+                {resetPackingMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                )}
+                Reset vendor uploads
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {!po.uploads?.length ? (
@@ -512,6 +614,18 @@ export function PODetailsPage() {
           )}
         </CardContent>
       </Card>
+
+      {canOrgUploadDocs ? (
+        <OrgPoUploadSheet
+          open={uploadSheetOpen}
+          onOpenChange={setUploadSheetOpen}
+          poId={po.id}
+          poLabel={po.poNumber}
+          onUploaded={() => {
+            queryClient.invalidateQueries({ queryKey: ['org', 'po', poId] });
+          }}
+        />
+      ) : null}
 
       <OrgPoUploadDetailPanel
         open={!!selectedUploadId && !!selectedU}

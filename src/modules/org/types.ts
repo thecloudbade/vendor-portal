@@ -143,7 +143,7 @@ export interface PODetail {
   documentUploadsAllowed?: boolean;
 }
 
-/** POST /org/pos/:poId/reset-packing — forwards to NetSuite; org admin only (server-enforced). */
+/** POST /org/pos/:poId/reset-packing — forwards to NetSuite; org roles (ORG_ADMIN / ORG_USER; server-enforced). */
 export type OrgPOResetPackingListPayload = {
   type: 'resetpackinglist';
   transactionType: 'purchaseorder';
@@ -320,14 +320,23 @@ export interface NetSuiteFieldConfigRecord {
   item_field_labels?: Record<string, string>;
 }
 
-export interface NetSuiteFieldConfigData {
-  purchase_order_line: NetSuiteFieldConfigRecord;
+/** Purchase order header (transaction body) fields persisted alongside line columns */
+export interface NetSuitePurchaseOrderHeaderFieldConfigRecord {
+  header_fields: string[];
+  header_field_labels?: Record<string, string>;
 }
 
-/** df-vendor: `{ item_fields }` required; optional `item_field_labels` id → label map */
+export interface NetSuiteFieldConfigData {
+  purchase_order_line: NetSuiteFieldConfigRecord;
+  /** Header-level fields when returned by GET field-config */
+  purchase_order?: NetSuitePurchaseOrderHeaderFieldConfigRecord;
+}
+
+/** df-vendor: `{ item_fields }` required; optional nested `purchase_order` for header tokens */
 export interface NetSuiteFieldConfigPutPayload {
   item_fields: string[];
   item_field_labels?: Record<string, string>;
+  purchase_order?: NetSuitePurchaseOrderHeaderFieldConfigRecord;
 }
 
 /** POST /integrations/netsuite/record-types/list */
@@ -354,6 +363,8 @@ export interface NetSuiteMetadataFetchResult {
   /** Often from `header` — not merged into `item_fields` for PO lines on the server. */
   bodyFields: NetSuiteMetadataFieldRow[];
   sublists: { id: string; name?: string; fields: NetSuiteMetadataFieldRow[] }[];
+  /** Meta / extension columns returned for the selected record (merged into PO line & header pickers in the portal). */
+  metaFields: NetSuiteMetadataFieldRow[];
 }
 
 export interface NetSuiteTestResult {

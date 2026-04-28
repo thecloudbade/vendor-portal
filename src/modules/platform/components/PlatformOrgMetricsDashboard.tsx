@@ -1,7 +1,7 @@
 import type { PlatformOrgMetrics } from '../types';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Building2, FileText, Layers, Send, Users } from 'lucide-react';
+import { BarChart3, Building2, FileText, Send, Users } from 'lucide-react';
 
 type MetricsInput = PlatformOrgMetrics | Record<string, unknown> | undefined;
 
@@ -16,21 +16,6 @@ function num(obj: Record<string, unknown>, ...keys: string[]): number | undefine
     if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v);
   }
   return undefined;
-}
-
-function pickPoByStatus(obj: Record<string, unknown>): Record<string, number> | null {
-  const raw =
-    obj.poByStatus ??
-    obj.po_by_status ??
-    obj.purchaseOrdersByStatus ??
-    obj.po_counts_by_status;
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
-    else if (typeof v === 'string' && !Number.isNaN(Number(v))) out[k] = Number(v);
-  }
-  return Object.keys(out).length ? out : null;
 }
 
 function humanizeKey(key: string): string {
@@ -122,11 +107,6 @@ export function PlatformOrgMetricsDashboard({ metrics }: { metrics: MetricsInput
   const submissions =
     num(o, 'submissionCount', 'submission_count', 'submissionsCount') ?? '—';
 
-  const poByStatus = pickPoByStatus(o);
-  const maxStatus = poByStatus
-    ? Math.max(1, ...Object.values(poByStatus).map((n) => (typeof n === 'number' ? n : 0)))
-    : 0;
-
   const extras: { key: string; value: unknown }[] = [];
   for (const [key, value] of Object.entries(o)) {
     if (USED_KEYS.has(key)) continue;
@@ -147,8 +127,7 @@ export function PlatformOrgMetricsDashboard({ metrics }: { metrics: MetricsInput
     po !== '—' ||
     vendors !== '—' ||
     vendorUsers !== '—' ||
-    submissions !== '—' ||
-    (poByStatus && Object.keys(poByStatus).length > 0);
+    submissions !== '—';
 
   if (!showKpiRow && extras.length === 0 && nestedExtras.length === 0) {
     return (
@@ -191,41 +170,6 @@ export function PlatformOrgMetricsDashboard({ metrics }: { metrics: MetricsInput
           iconWrapClass="bg-violet-500/10 text-violet-700 dark:text-violet-400"
         />
       </div>
-      ) : null}
-
-      {poByStatus && Object.keys(poByStatus).length > 0 ? (
-        <div className="rounded-2xl border border-border/80 bg-card shadow-card">
-          <div className="border-b border-border/60 bg-muted/25 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Layers className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <h3 className="text-base font-semibold leading-tight">POs by status</h3>
-                <p className="text-sm text-muted-foreground">Distribution across purchase order states</p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4 p-5">
-            {Object.entries(poByStatus)
-              .sort((a, b) => b[1] - a[1])
-              .map(([status, count]) => {
-                const pct = maxStatus > 0 ? Math.round((count / maxStatus) * 100) : 0;
-                return (
-                  <div key={status}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-                      <span className="font-medium text-foreground">{humanizeKey(status)}</span>
-                      <span className="tabular-nums text-muted-foreground">{count}</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary/80 transition-[width] duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
       ) : null}
 
       {(extras.length > 0 || nestedExtras.length > 0) && (

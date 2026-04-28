@@ -15,8 +15,13 @@ export const ROUTES = {
   PLATFORM: {
     LOGIN: '/auth/platform/login',
     VERIFY_OTP: '/auth/platform/verify-otp',
+    /** System overview — rollups, org picker, sessions when API supports */
     DASHBOARD: '/platform',
+    /** Paginated organization directory */
+    ORGANIZATIONS: '/platform/organizations',
     ORG_DETAIL: (id: string) => `/platform/organizations/${encodeURIComponent(id)}`,
+    /** Session / audit listing for SUPERADMIN when API supports */
+    SESSIONS: '/platform/sessions',
   },
 
   /** Public org-admin invite completion (query: token) */

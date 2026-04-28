@@ -11,8 +11,11 @@ import {
   normalizeMetadataRecordTypeForQuery,
 } from '../api/org.api';
 import {
+  buildBodyFieldOptions,
   buildItemFieldLabelsFromOptions,
+  buildMetaFieldOptions,
   buildSublistFieldOptions,
+  mergeFieldOptionsDedupe,
   normalizeFieldTokenFromParts,
 } from '../utils/netsuiteMetadataFieldConfig';
 import { mergeDbKeysOrPresets } from '../utils/netsuiteRecordSample';
@@ -135,12 +138,21 @@ export function NetSuiteFieldConfigCard({
   const [selectedSublistId, setSelectedSublistId] = useState<string>('');
   const [lineFields, setLineFields] = useState<string[]>([]);
   const [customIdDraft, setCustomIdDraft] = useState('');
+  const [headerFields, setHeaderFields] = useState<string[]>([]);
+  const [customHeaderDraft, setCustomHeaderDraft] = useState('');
 
   const addLineFieldToken = (token: string) => tryAddFieldToken(lineFields, setLineFields, toast, token);
 
   const addCustomIdDraft = () => {
     tryAddFieldToken(lineFields, setLineFields, toast, customIdDraft);
     setCustomIdDraft('');
+  };
+
+  const addHeaderFieldToken = (token: string) => tryAddFieldToken(headerFields, setHeaderFields, toast, token);
+
+  const addCustomHeaderDraft = () => {
+    tryAddFieldToken(headerFields, setHeaderFields, toast, customHeaderDraft);
+    setCustomHeaderDraft('');
   };
 
   const metadataRecordType = useMemo(() => {
@@ -163,10 +175,12 @@ export function NetSuiteFieldConfigCard({
   useEffect(() => {
     if (!canReadFieldConfig) {
       setLineFields([]);
+      setHeaderFields([]);
       return;
     }
     if (!fieldData) return;
     setLineFields([...fieldData.purchase_order_line.item_fields]);
+    setHeaderFields([...(fieldData.purchase_order?.header_fields ?? [])]);
   }, [fieldData, canReadFieldConfig]);
 
   useEffect(() => {
@@ -231,20 +245,36 @@ export function NetSuiteFieldConfigCard({
 
   const sublistFieldOptions = useMemo(() => buildSublistFieldOptions(metadata), [metadata]);
 
+  const headerPickerOptions = useMemo(
+    () => mergeFieldOptionsDedupe(buildBodyFieldOptions(metadata), buildMetaFieldOptions(metadata)),
+    [metadata]
+  );
+
+  const lineCatalogMerged = useMemo(
+    () => mergeFieldOptionsDedupe(buildMetaFieldOptions(metadata), sublistFieldOptions),
+    [metadata, sublistFieldOptions]
+  );
+
+  const lineSearchOptions = useMemo(
+    () => mergeFieldOptionsDedupe(buildMetaFieldOptions(metadata), sublistOptions),
+    [metadata, sublistOptions]
+  );
+
   const metadataLabelMap = useMemo(() => {
     const m = new Map<string, NetSuiteFieldOption>();
-    for (const o of sublistFieldOptions) m.set(o.value, o);
+    for (const o of lineCatalogMerged) m.set(o.value, o);
     return m;
-  }, [sublistFieldOptions]);
+  }, [lineCatalogMerged]);
 
   const keyListForOptions = useMemo(() => {
-    const fromMeta = sublistFieldOptions.map((o) => o.value);
+    const fromMeta = lineCatalogMerged.map((o) => o.value);
     const merged = mergeDbKeysOrPresets([...new Set(fromMeta)], [] as readonly string[]);
     const line = canReadFieldConfig ? lineFields : [];
     return [...new Set([...merged, ...line])].sort((a, b) => a.localeCompare(b));
-  }, [sublistFieldOptions, lineFields, canReadFieldConfig]);
+  }, [lineCatalogMerged, lineFields, canReadFieldConfig]);
 
   const savedLineLabels = fieldData?.purchase_order_line.item_field_labels;
+  const savedHeaderLabels = fieldData?.purchase_order?.header_field_labels;
 
   const fieldOptions = useMemo((): NetSuiteFieldOption[] => {
     return keyListForOptions.map((value) => {
@@ -256,20 +286,46 @@ export function NetSuiteFieldConfigCard({
     });
   }, [keyListForOptions, metadataLabelMap, savedLineLabels]);
 
+  const headerKeyListForOptions = useMemo(() => {
+    const fromMeta = headerPickerOptions.map((o) => o.value);
+    const merged = mergeDbKeysOrPresets([...new Set(fromMeta)], [] as readonly string[]);
+    const hf = canReadFieldConfig ? headerFields : [];
+    return [...new Set([...merged, ...hf])].sort((a, b) => a.localeCompare(b));
+  }, [headerPickerOptions, headerFields, canReadFieldConfig]);
+
+  const headerDisplayOptions = useMemo((): NetSuiteFieldOption[] => {
+    const map = new Map(headerPickerOptions.map((o) => [o.value, o]));
+    return headerKeyListForOptions.map((value) => {
+      const m = map.get(value);
+      if (m) return m;
+      const sl = savedHeaderLabels?.[value];
+      if (sl) return { value, label: sl, detail: 'Saved' };
+      return { value, label: value, detail: 'Custom' };
+    });
+  }, [headerKeyListForOptions, headerPickerOptions, savedHeaderLabels]);
+
   const saveMutation = useMutation({
     mutationFn: () => {
-      const err = validateFieldList(lineFields);
-      if (err) throw new Error(err);
-      const ids = normalizeFields(lineFields);
-      const item_field_labels = buildItemFieldLabelsFromOptions(ids, fieldOptions);
+      const lineErr = validateFieldList(lineFields);
+      if (lineErr) throw new Error(lineErr);
+      const headerErr = validateFieldList(headerFields);
+      if (headerErr) throw new Error(headerErr);
+      const lineIds = normalizeFields(lineFields);
+      const headerIds = normalizeFields(headerFields);
+      const item_field_labels = buildItemFieldLabelsFromOptions(lineIds, fieldOptions);
+      const header_field_labels = buildItemFieldLabelsFromOptions(headerIds, headerDisplayOptions);
       return putNetSuiteFieldConfig({
-        item_fields: ids,
+        item_fields: lineIds,
         ...(Object.keys(item_field_labels).length ? { item_field_labels } : {}),
+        purchase_order: {
+          header_fields: headerIds,
+          ...(Object.keys(header_field_labels).length ? { header_field_labels } : {}),
+        },
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org', 'integrations', 'netsuite', 'field-config'] });
-      toast({ title: 'Saved', description: 'PO line columns are updated.' });
+      toast({ title: 'Saved', description: 'Purchase order header and line fields are updated.' });
     },
     onError: (e: Error) => {
       toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
@@ -336,10 +392,10 @@ export function NetSuiteFieldConfigCard({
   return (
     <Card className="border-border/80">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base font-semibold">PO line columns</CardTitle>
+        <CardTitle className="text-base font-semibold">Purchase order fields</CardTitle>
         <CardDescription>
-          Choose a NetSuite record type, then a line sublist, then the columns to include on purchase order lines. Only this list
-          is saved.
+          Choose a NetSuite record type, then map header fields (body + meta from the catalog) and line columns (sublist +
+          meta). Only these lists are saved.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 overflow-visible">
@@ -371,7 +427,7 @@ export function NetSuiteFieldConfigCard({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">1. Record type</h3>
-                  <p className="text-xs text-muted-foreground">Usually Purchase Order for line items.</p>
+                  <p className="text-xs text-muted-foreground">Usually Purchase Order for header and line fields.</p>
                 </div>
                 <Button
                   type="button"
@@ -415,9 +471,138 @@ export function NetSuiteFieldConfigCard({
 
             {metaErrMsg && !metadataLoading && <p className="text-sm text-destructive">{metaErrMsg}</p>}
 
+            {metadata && !metadataLoading && (
+              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
+                <h3 className="text-sm font-semibold text-foreground">2. Purchase order header</h3>
+                <p className="text-xs text-muted-foreground">
+                  Body fields and record-level meta fields from metadata. Add custom ids in the same token format (for example{' '}
+                  <span className="font-mono">custbody_myfield</span>).
+                </p>
+                {metadata.metaFields.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    When the integration returns meta columns, they are listed here and in line search.
+                  </p>
+                ) : null}
+                {canManageFieldConfig ? (
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+                    <div className="min-w-0 space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Search body & meta fields</Label>
+                        <NetSuiteFieldSearchCombobox
+                          options={headerPickerOptions}
+                          selected={headerFields}
+                          onSelect={addHeaderFieldToken}
+                          loading={metadataLoading}
+                          disabled={saveDisabled || headerFields.length >= MAX_FIELDS}
+                          triggerPlaceholder="Search header fields to add…"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground" htmlFor="ns-custom-po-header-field">
+                          Custom header field id
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          <Input
+                            id="ns-custom-po-header-field"
+                            value={customHeaderDraft}
+                            onChange={(e) => setCustomHeaderDraft(e.target.value)}
+                            placeholder="e.g. custbody_reference"
+                            className="min-w-0 flex-1 font-mono text-sm"
+                            disabled={saveDisabled || headerFields.length >= MAX_FIELDS}
+                            autoComplete="off"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addCustomHeaderDraft();
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="shrink-0"
+                            disabled={saveDisabled || headerFields.length >= MAX_FIELDS || !customHeaderDraft.trim()}
+                            onClick={addCustomHeaderDraft}
+                          >
+                            <Plus className="mr-1 h-4 w-4" />
+                            Add
+                          </Button>
+                        </div>
+                      </div>
+                      {headerFields.length >= MAX_FIELDS && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">Maximum {MAX_FIELDS} header fields.</p>
+                      )}
+                    </div>
+                    <div className="min-w-0 space-y-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">Selected header fields</h4>
+                        <p className="mt-1 text-xs text-muted-foreground">Order is preserved.</p>
+                      </div>
+                      {headerFields.length > 0 ? (
+                        <ul className="max-h-[min(40vh,20rem)] space-y-2 overflow-y-auto pr-1">
+                          {headerFields.map((field, index) => {
+                            const { title, id } = labelForToken(field, headerDisplayOptions, savedHeaderLabels);
+                            return (
+                              <li
+                                key={`${field}-${index}`}
+                                className="rounded-lg border border-border/80 bg-muted/20 px-3 py-2"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <span className="text-sm font-medium leading-snug text-foreground">{title}</span>
+                                    <p
+                                      className="mt-0.5 break-all font-mono text-[10px] leading-tight text-muted-foreground"
+                                      title="Internal id"
+                                    >
+                                      {id}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                    disabled={saveDisabled}
+                                    onClick={() => setHeaderFields((prev) => prev.filter((_, i) => i !== index))}
+                                    aria-label={`Remove ${title}`}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No header fields yet.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : headerFields.length > 0 ? (
+                  <div className="space-y-2 rounded-lg border border-border/70 bg-muted/15 p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Saved header fields (read-only)</p>
+                    <ul className="flex flex-col gap-2">
+                      {headerFields.map((id) => {
+                        const { title } = labelForToken(id, headerDisplayOptions, savedHeaderLabels);
+                        return (
+                          <li
+                            key={id}
+                            className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/80 px-3 py-2"
+                          >
+                            <span className="text-sm font-medium text-foreground">{title}</span>
+                            <span className="font-mono text-[10px] text-muted-foreground">{id}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No saved header fields.</p>
+                )}
+              </div>
+            )}
+
             {metadata && !metadataLoading && sublistsSorted.length > 0 && (
               <div className="space-y-3 rounded-xl border border-border/60 bg-muted/10 p-4">
-                <h3 className="text-sm font-semibold text-foreground">2. Line sublist</h3>
+                <h3 className="text-sm font-semibold text-foreground">3. Line sublist</h3>
                 <p className="text-xs text-muted-foreground">Which table on the record holds the line columns (for example “item”).</p>
                 <div className="max-w-md">
                   <Label className="text-xs text-muted-foreground">Sublist</Label>
@@ -454,17 +639,17 @@ export function NetSuiteFieldConfigCard({
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
                   <div className="min-w-0 space-y-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-foreground">3. Add columns from this sublist</h3>
+                      <h3 className="text-sm font-semibold text-foreground">4. Add line columns (sublist + meta)</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Search the active sublist, then add. Custom ids use the same token format as the API (letters, numbers,
-                        underscores).
+                        Search meta fields for this record plus the active sublist. Custom ids use the same token format (for example{' '}
+                        <span className="font-mono">item__quantity</span> or <span className="font-mono">meta_customcol</span>).
                       </p>
                     </div>
                     {activeSublist ? (
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Search sublist columns</Label>
+                        <Label className="text-xs text-muted-foreground">Search meta & active sublist columns</Label>
                         <NetSuiteFieldSearchCombobox
-                          options={sublistOptions}
+                          options={lineSearchOptions}
                           selected={lineFields}
                           onSelect={addLineFieldToken}
                           loading={metadataLoading}
@@ -474,7 +659,7 @@ export function NetSuiteFieldConfigCard({
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        Choose a line sublist in step 2. Then you can search columns for that sublist here.
+                        Choose a line sublist in step 3. Then you can search columns for that sublist here.
                       </p>
                     )}
                     <div className="space-y-1.5">

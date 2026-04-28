@@ -27,9 +27,14 @@ export type RequestConfig = RequestInit & {
 export function unwrapApiBody(body: unknown): unknown {
   if (!body || typeof body !== 'object') return body;
   if (!('success' in body)) return body;
-  const o = body as { success: boolean; data?: unknown; error?: { message?: string } };
+  const o = body as {
+    success: boolean;
+    data?: unknown;
+    error?: { message?: string; code?: string };
+  };
   if (o.success === false) {
-    throw new Error(o.error?.message ?? 'Request failed');
+    const err = o.error;
+    throw new ApiBusinessError(err?.message ?? 'Request failed', err?.code);
   }
   if (o.success === true && 'data' in o) {
     return o.data;
@@ -139,5 +144,17 @@ export class ApiError extends Error {
   }
   get isServerError(): boolean {
     return this.status >= 500;
+  }
+}
+
+/** API returned `{ success: false, error: { code?, message } }` (typically HTTP 200). */
+export class ApiBusinessError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'ApiBusinessError';
+    this.code = code;
+    Object.setPrototypeOf(this, ApiBusinessError.prototype);
   }
 }
