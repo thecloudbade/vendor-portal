@@ -74,23 +74,30 @@ export function OrgPoUploadSheet({ open, onOpenChange, poId, poLabel, onUploaded
   const [pl, setPl] = useState<File | null>(null);
   const [ci, setCi] = useState<File | null>(null);
   const [coo, setCoo] = useState<File | null>(null);
+  const [asn, setAsn] = useState<File | null>(null);
 
   const [dlPl, setDlPl] = useState(false);
   const [dlCi, setDlCi] = useState(false);
 
   const fileList = useMemo(() => {
-    const rows: { file: File; type: 'pl' | 'ci' | 'coo' }[] = [];
+    const rows: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[] = [];
     if (pl) rows.push({ file: pl, type: 'pl' });
     if (ci) rows.push({ file: ci, type: 'ci' });
     if (coo) rows.push({ file: coo, type: 'coo' });
+    if (asn) rows.push({ file: asn, type: 'asn' });
     return rows;
-  }, [pl, ci, coo]);
+  }, [pl, ci, coo, asn]);
 
   const validateMut = useMutation({
     mutationFn: () => {
       const list =
-        [{ f: pl, t: 'pl' as const }, { f: ci, t: 'ci' as const }, { f: coo, t: 'coo' as const }]
-          .filter((x): x is { f: File; t: 'pl' | 'ci' | 'coo' } => !!x.f)
+        [
+          { f: pl, t: 'pl' as const },
+          { f: ci, t: 'ci' as const },
+          { f: coo, t: 'coo' as const },
+          { f: asn, t: 'asn' as const },
+        ]
+          .filter((x): x is { f: File; t: 'pl' | 'ci' | 'coo' | 'asn' } => !!x.f)
           .map((x) => ({ file: x.f, type: x.t }));
       if (!list.length) throw new Error('Choose at least one file');
       return validateOrgPODocuments(poId, list);
@@ -126,6 +133,7 @@ export function OrgPoUploadSheet({ open, onOpenChange, poId, poLabel, onUploaded
         setPl(null);
         setCi(null);
         setCoo(null);
+        setAsn(null);
         onUploaded();
         onOpenChange(false);
       } else {
@@ -166,7 +174,8 @@ export function OrgPoUploadSheet({ open, onOpenChange, poId, poLabel, onUploaded
               <div className="min-w-0 space-y-1">
                 <SheetTitle>Upload packing list & invoice</SheetTitle>
                 <SheetDescription>
-                  Packing list (PL) and commercial invoice (CI) as CSV templates; certificate of origin (COO) as PDF.
+                  Packing list (PL) and commercial invoice (CI) as CSV templates; certificate of origin (COO) as PDF;
+                  advance shipping notice (ASN) as CSV when applicable.
                   {poLabel ? (
                     <>
                       {' '}
@@ -260,6 +269,14 @@ export function OrgPoUploadSheet({ open, onOpenChange, poId, poLabel, onUploaded
                   disabled={busy}
                 />
                 <MiniFileSlot id={`org-sheet-upload-coo-${poId}`} label="Certificate of origin (COO)" accept="application/pdf" file={coo} onChange={setCoo} disabled={busy} />
+                <MiniFileSlot
+                  id={`org-sheet-upload-asn-${poId}`}
+                  label="Advance shipping notice (ASN)"
+                  accept=".csv,text/csv"
+                  file={asn}
+                  onChange={setAsn}
+                  disabled={busy}
+                />
               </div>
             </section>
 
@@ -291,7 +308,7 @@ export function OrgPoUploadSheet({ open, onOpenChange, poId, poLabel, onUploaded
               <code className="text-xs">GET …/templates/pl.csv</code> and <code className="text-xs">ci.csv</code>
             </li>
             <li>
-              <code className="text-xs">POST …/uploads?type=PL|CI|COO</code>
+              <code className="text-xs">POST …/uploads?type=PL|CI|COO|ASN</code>
             </li>
           </ul>
           <p className="text-xs text-muted-foreground">Authorize org admins in df-vendor; behavior matches POST /vendor/pos/:id/uploads.</p>

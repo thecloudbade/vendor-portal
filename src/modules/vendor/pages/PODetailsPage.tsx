@@ -91,33 +91,19 @@ export function PODetailsPage() {
 
   const poHeaderMeta = (
     <div className="space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-sm md:p-5">
-      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Date</dt>
-          <dd className="mt-1 text-sm font-medium text-foreground">{formatDateTime(po.createdAt)}</dd>
-        </div>
-        {po.updatedAt && (
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
-            <dd className="mt-1 text-sm font-medium text-foreground">{formatDateTime(po.updatedAt)}</dd>
-          </div>
-        )}
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</dt>
-          <dd className="mt-1 text-sm font-medium text-foreground">{po.status}</dd>
-        </div>
-        <div className="sm:col-span-2 lg:col-span-2">
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Vendor</dt>
           <dd className="mt-1 text-sm font-medium text-foreground">{po.vendorName ?? po.vendorId}</dd>
         </div>
-        <div className="sm:col-span-2 lg:col-span-4">
+        <div className="sm:col-span-2">
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ship to</dt>
           <dd className="mt-1 text-sm font-medium leading-relaxed text-foreground">
             {po.shipTo && po.shipTo.trim() !== '' ? po.shipTo : '—'}
           </dd>
         </div>
         {po.requiredDocs?.length ? (
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2">
             <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Required documents</dt>
             <dd className="mt-1 text-sm text-foreground">{po.requiredDocs.join(', ')}</dd>
           </div>
@@ -131,9 +117,6 @@ export function PODetailsPage() {
       )}
       {po.netsuiteFields && Object.keys(po.netsuiteFields).length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            NetSuite — purchase order header
-          </p>
           <KeyValueFields data={po.netsuiteFields} dense />
         </div>
       )}
@@ -146,6 +129,17 @@ export function PODetailsPage() {
       <PageHeader
         eyebrow="Purchase order"
         title={po.poNumber}
+        titleAside={
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <span className="inline-flex rounded-full border border-border/80 bg-muted/50 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">
+              {po.status}
+            </span>
+            <div className="flex flex-col gap-0.5 text-xs leading-snug text-muted-foreground tabular-nums sm:text-right">
+              <span>Created {formatDateTime(po.createdAt)}</span>
+              {po.updatedAt ? <span>Updated {formatDateTime(po.updatedAt)}</span> : null}
+            </div>
+          </div>
+        }
         description={poHeaderMeta}
         actions={
           docAccess.allowed ? (

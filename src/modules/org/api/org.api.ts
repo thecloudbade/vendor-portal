@@ -31,6 +31,9 @@ import type {
   NetSuiteRecordCacheType,
   NetSuiteRecordCacheView,
   NetSuiteRecordCacheSyncResult,
+  NetSuiteClassificationListItem,
+  NetSuiteClassificationDetail,
+  NetSuiteClassificationSyncResult,
   AuditLogEntry,
   OrgRecentUploadItem,
   OnboardingChecklistData,
@@ -195,6 +198,9 @@ function mapPOListItemNetsuiteId(raw: POListItem): POListItem {
     r.netsuiteTransId ??
     r.netsuite_trans_id ??
     r.trans_id ??
+    r.tran_id ??
+    r.externalId ??
+    r.external_id ??
     r.netsuitePoId ??
     r.netsuite_po_id ??
     r.po_id;
@@ -290,7 +296,11 @@ function mapPODetailNetsuiteId(raw: PODetail): PODetail {
     r.netsuiteTransId ??
     r.netsuite_trans_id ??
     r.trans_id ??
+    r.tran_id ??
+    r.externalId ??
+    r.external_id ??
     r.netsuitePoId ??
+    r.netsuite_po_id ??
     r.po_id;
   if (pick == null || pick === '') return raw;
   return { ...raw, netsuiteTransId: String(pick) };
@@ -336,6 +346,10 @@ function resolveNetsuiteTransIdFromOrgPORaw(raw: Record<string, unknown>): strin
     'netsuiteTransId',
     'netsuite_trans_id',
     'trans_id',
+    'tran_id',
+    /** Mongo PurchaseOrder.externalId — NetSuite PO internal id after ERP sync */
+    'externalId',
+    'external_id',
     'netsuitePoId',
     'netsuite_po_id',
     'transactionId',
@@ -353,7 +367,7 @@ function resolveNetsuiteTransIdFromOrgPORaw(raw: Record<string, unknown>): strin
   for (const block of nestedBlocks) {
     if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
     const o = block as Record<string, unknown>;
-    for (const k of ['internalid', 'internalId']) {
+    for (const k of ['internalid', 'internalId', 'trans_id', 'tran_id']) {
       const v = o[k];
       if (v != null && String(v).trim() !== '') return String(v).trim();
     }
@@ -451,6 +465,7 @@ export async function getOrgPODetail(poId: string) {
 /**
  * POST /org/pos/:poId/reset-packing — clear NetSuite packing list / commercial invoice qty lines
  * and reopen vendor uploads (when the API also sets `documentUploadsAllowed` / clears portal state).
+ * Body uses NetSuite **`trans_id` / `tran_id`** (numeric internal PO id), not the portal PO `_id` or PO#.
  */
 export async function postOrgPOResetPackingList(poId: string, body: OrgPOResetPackingListPayload) {
   return withRefreshRetry(() =>
@@ -851,6 +866,137 @@ export async function postNetSuiteRecordCacheSync(body: {
   );
 }
 
+function mapClassificationListRow(r: Record<string, unknown>): NetSuiteClassificationListItem {
+  return {
+    id: String(r.id ?? ''),
+    classificationKey: String(r.classificationKey ?? ''),
+    label: String(r.label ?? ''),
+    fetchStatus: r.fetchStatus != null ? String(r.fetchStatus) : null,
+    fetchedAt: r.fetchedAt != null ? String(r.fetchedAt) : null,
+    errorSnippet: r.errorSnippet != null ? String(r.errorSnippet) : null,
+    netsuiteHttpStatus: typeof r.netsuiteHttpStatus === 'number' ? r.netsuiteHttpStatus : null,
+    createdAt: r.createdAt != null ? String(r.createdAt) : undefined,
+    updatedAt: r.updatedAt != null ? String(r.updatedAt) : undefined,
+  };
+}
+
+function mapClassificationDetail(raw: unknown): NetSuiteClassificationDetail {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const lastQ = o.lastQuery;
+  const recRaw = o.records;
+  const records =
+    Array.isArray(recRaw) ?
+      recRaw
+        .filter((x) => x && typeof x === 'object')
+        .map((x) => {
+          const r = x as Record<string, unknown>;
+          return {
+            id: String(r.id ?? ''),
+            orgId: String(r.orgId ?? ''),
+            classificationKey: String(r.classificationKey ?? ''),
+            netsuiteRecordId: String(r.netsuiteRecordId ?? ''),
+            row: r.row,
+            updatedAt: r.updatedAt != null ? String(r.updatedAt) : undefined,
+          };
+        })
+    : undefined;
+  const storedRecordCount =
+    typeof o.storedRecordCount === 'number' ? o.storedRecordCount : records !== undefined ? records.length : undefined;
+
+  return {
+    id: String(o.id ?? ''),
+    classificationKey: String(o.classificationKey ?? ''),
+    label: String(o.label ?? ''),
+    fetchStatus: o.fetchStatus != null ? String(o.fetchStatus) : null,
+    netsuiteHttpStatus: typeof o.netsuiteHttpStatus === 'number' ? o.netsuiteHttpStatus : null,
+    errorSnippet: o.errorSnippet != null ? String(o.errorSnippet) : null,
+    fetchedAt: o.fetchedAt != null ? String(o.fetchedAt) : null,
+    lastQuery:
+      lastQ && typeof lastQ === 'object' && !Array.isArray(lastQ)
+        ? (lastQ as Record<string, unknown>)
+        : null,
+    payload: o.payload,
+    ...(records !== undefined ? { records } : {}),
+    ...(storedRecordCount != null && storedRecordCount >= 0
+      ? { storedRecordCount }
+      : {}),
+    updatedAt: o.updatedAt != null ? String(o.updatedAt) : undefined,
+  };
+}
+
+function mapClassificationSync(raw: unknown): NetSuiteClassificationSyncResult {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const mq = o.mappedQuery;
+  return {
+    classificationKey: String(o.classificationKey ?? ''),
+    success: o.success === true,
+    netsuiteHttpStatus: typeof o.netsuiteHttpStatus === 'number' ? o.netsuiteHttpStatus : undefined,
+    urlRedacted: o.urlRedacted != null ? String(o.urlRedacted) : null,
+    fetchStatus: o.fetchStatus != null ? String(o.fetchStatus) : undefined,
+    errorSnippet: o.errorSnippet != null ? String(o.errorSnippet) : null,
+    mappedQuery:
+      mq && typeof mq === 'object' && !Array.isArray(mq) ? (mq as Record<string, unknown>) : undefined,
+    recordCount: typeof o.recordCount === 'number' ? o.recordCount : o.recordCount === null ? null : undefined,
+    storedRowCount: typeof o.storedRowCount === 'number' ? o.storedRowCount : undefined,
+  };
+}
+
+/** GET /org/integrations/netsuite/classifications */
+export async function getNetSuiteClassifications(): Promise<NetSuiteClassificationListItem[]> {
+  return withRefreshRetry(() =>
+    http
+      .get<unknown>('/org/integrations/netsuite/classifications')
+      .then((raw) => asArray<Record<string, unknown>>(raw).map(mapClassificationListRow))
+  );
+}
+
+/** POST /org/integrations/netsuite/classifications — ORG_ADMIN */
+export async function postNetSuiteClassification(body: {
+  classificationKey: string;
+  label?: string;
+}): Promise<NetSuiteClassificationListItem> {
+  return withRefreshRetry(() =>
+    http
+      .post<unknown>('/org/integrations/netsuite/classifications', body)
+      .then((raw) => {
+        const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+        return mapClassificationListRow(o);
+      })
+  );
+}
+
+/** GET /org/integrations/netsuite/classifications/:key — cached payload when sync succeeded */
+export async function getNetSuiteClassification(classificationKey: string): Promise<NetSuiteClassificationDetail> {
+  return withRefreshRetry(() =>
+    http
+      .get<unknown>(
+        `/org/integrations/netsuite/classifications/${encodeURIComponent(classificationKey)}`
+      )
+      .then(mapClassificationDetail)
+  );
+}
+
+/** POST .../sync — ORG_ADMIN; calls NetSuite GET `type=classification&classification=` */
+export async function postNetSuiteClassificationSync(
+  classificationKey: string
+): Promise<NetSuiteClassificationSyncResult> {
+  return withRefreshRetry(() =>
+    http
+      .post<unknown>(
+        `/org/integrations/netsuite/classifications/${encodeURIComponent(classificationKey)}/sync`,
+        {}
+      )
+      .then(mapClassificationSync)
+  );
+}
+
+/** DELETE /org/integrations/netsuite/classifications/:key */
+export async function deleteNetSuiteClassification(classificationKey: string): Promise<void> {
+  return withRefreshRetry(() =>
+    http.delete(`/org/integrations/netsuite/classifications/${encodeURIComponent(classificationKey)}`)
+  );
+}
+
 function pickItemFieldsRecord(rec: unknown): string[] {
   if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return [];
   const r = rec as Record<string, unknown>;
@@ -1033,11 +1179,17 @@ function normalizeRecordTypesList(raw: unknown): NetSuiteRecordTypeOption[] {
         if (typeof x === 'string') return { id: x, name: x };
         if (x && typeof x === 'object') {
           const r = x as Record<string, unknown>;
-          const id = String(r.id ?? r.scriptId ?? r.scriptid ?? r.recordType ?? r.recordtype ?? '').trim();
+          const recordTypeToken = String(r.recordtype ?? r.recordType ?? '').trim();
+          const fallbackId = String(
+            r.id ?? r.internalid ?? r.internalId ?? r.scriptId ?? r.scriptid ?? ''
+          ).trim();
+          const id = recordTypeToken || fallbackId;
           if (!id) return null;
+          const internalRaw = r.internalid ?? r.internalId;
           return {
             id,
             name: r.name != null ? String(r.name) : r.label != null ? String(r.label) : undefined,
+            internalId: internalRaw != null ? String(internalRaw) : undefined,
             scriptId:
               r.scriptId != null
                 ? String(r.scriptId)

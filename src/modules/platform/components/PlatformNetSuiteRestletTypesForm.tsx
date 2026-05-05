@@ -9,12 +9,14 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, Plug } from 'lucide-react';
 
+/** Org-level SuiteScript `type=` overrides. Classification has no safe global default — must match deployed script. */
 const DEFAULTS = {
   restletTypeVendors: 'vendors',
   restletTypePurchaseOrders: 'purchaseorders',
   restletTypePurchaseLineData: 'purchaseorderlines',
   restletTypeRecordTypes: 'recordtypes',
   restletTypeMetadata: 'metadata',
+  restletTypeClassification: '',
   restletTypeDocumentUpload: 'vendorfilesupload',
   restletTypeLineUpdate: '',
 } as const;
@@ -28,6 +30,10 @@ function mergeFromDetail(d: PlatformOrgDetail | undefined): Record<string, strin
     restletTypePurchaseLineData: String(src.restletTypePurchaseLineData ?? DEFAULTS.restletTypePurchaseLineData),
     restletTypeRecordTypes: String(src.restletTypeRecordTypes ?? DEFAULTS.restletTypeRecordTypes),
     restletTypeMetadata: String(src.restletTypeMetadata ?? DEFAULTS.restletTypeMetadata),
+    restletTypeClassification:
+      src.restletTypeClassification != null && String(src.restletTypeClassification).trim() !== ''
+        ? String(src.restletTypeClassification)
+        : DEFAULTS.restletTypeClassification,
     restletTypeDocumentUpload: String(src.restletTypeDocumentUpload ?? DEFAULTS.restletTypeDocumentUpload),
     restletTypeLineUpdate:
       src.restletTypeLineUpdate != null && String(src.restletTypeLineUpdate).trim() !== ''
@@ -90,6 +96,11 @@ export function PlatformNetSuiteRestletTypesForm({ orgId, detail }: Props) {
           {row('restletTypePurchaseLineData', 'Purchase line data')}
           {row('restletTypeRecordTypes', 'Record types list')}
           {row('restletTypeMetadata', 'Metadata fetch')}
+          {row(
+            'restletTypeClassification',
+            'Classification lists',
+            'Must match SuiteScript branch; list key is recordType= (leave empty to fall through to org/env).'
+          )}
           {row('restletTypeDocumentUpload', 'Vendor file upload POST')}
           {row(
             'restletTypeLineUpdate',
@@ -107,6 +118,7 @@ export function PlatformNetSuiteRestletTypesForm({ orgId, detail }: Props) {
               restletTypePurchaseLineData: form.restletTypePurchaseLineData.trim() || null,
               restletTypeRecordTypes: form.restletTypeRecordTypes.trim() || null,
               restletTypeMetadata: form.restletTypeMetadata.trim() || null,
+              restletTypeClassification: form.restletTypeClassification.trim() || null,
               restletTypeDocumentUpload: form.restletTypeDocumentUpload.trim() || null,
               restletTypeLineUpdate: form.restletTypeLineUpdate.trim() || null,
             })

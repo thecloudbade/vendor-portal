@@ -47,11 +47,12 @@ export async function downloadOrgPOTemplate(poId: string, kind: 'pl' | 'ci'): Pr
   URL.revokeObjectURL(url);
 }
 
-const typeMap = { pl: 'PL', ci: 'CI', coo: 'COO' } as const;
+const typeMap = { pl: 'PL', ci: 'CI', coo: 'COO', asn: 'ASN' } as const;
 
-function docLabel(type: 'pl' | 'ci' | 'coo'): string {
+function docLabel(type: 'pl' | 'ci' | 'coo' | 'asn'): string {
   if (type === 'pl') return 'Packing list';
   if (type === 'ci') return 'Commercial invoice';
+  if (type === 'asn') return 'Advance shipping notice (ASN)';
   return 'COO';
 }
 
@@ -60,7 +61,7 @@ type UploadApiRow = UploadValidationResult & { debug?: Record<string, unknown> }
 /** POST /org/pos/:poId/uploads — same multipart + query params as vendor route. */
 export async function uploadOrgPODocuments(
   poId: string,
-  files: { file: File; type: 'pl' | 'ci' | 'coo' }[],
+  files: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[],
   options?: { validateOnly?: boolean; validationDebug?: boolean }
 ): Promise<UploadValidationResult> {
   const validateOnly = options?.validateOnly === true;
@@ -92,7 +93,8 @@ export async function uploadOrgPODocuments(
       }
       if (r.warnings?.length) merged.warnings = [...(merged.warnings ?? []), ...r.warnings];
       if (r.mismatches?.length) {
-        const docType: 'pl' | 'ci' | undefined = type === 'pl' ? 'pl' : type === 'ci' ? 'ci' : undefined;
+        const docType: 'pl' | 'ci' | 'asn' | undefined =
+          type === 'pl' ? 'pl' : type === 'ci' ? 'ci' : type === 'asn' ? 'asn' : undefined;
         merged.mismatches = [
           ...(merged.mismatches ?? []),
           ...r.mismatches.map((m) => (docType ? { ...m, docType } : m)),
@@ -127,7 +129,7 @@ export async function uploadOrgPODocuments(
 
 export async function validateOrgPODocuments(
   poId: string,
-  files: { file: File; type: 'pl' | 'ci' | 'coo' }[],
+  files: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[],
   options?: { validationDebug?: boolean }
 ): Promise<UploadValidationResult> {
   return uploadOrgPODocuments(poId, files, { validateOnly: true, validationDebug: options?.validationDebug === true });

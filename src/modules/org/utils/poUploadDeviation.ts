@@ -6,6 +6,7 @@ export function tolerancePctForUploadType(
 ): number | undefined {
   if (!rules) return undefined;
   const t = upload.type?.toUpperCase() ?? '';
+  if (t === 'ASN') return undefined;
   if (t.includes('COMMERCIAL') || t === 'CI' || t.includes('INVOICE')) {
     return rules.commercialInvoiceQtyTolerancePct;
   }

@@ -14,12 +14,14 @@ import { OrgProfileForm } from '../components/OrgProfileForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
-import { Database, FileSpreadsheet, LayoutGrid, Plug, Settings } from 'lucide-react';
+import { Database, FileSpreadsheet, LayoutGrid, Layers, Plug, Settings } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
 import { canFetchNetSuiteCatalog, canManageSettings } from '@/modules/common/constants/roles';
 import type { OrgPreferencesPayload } from '../types';
 
-const SETTINGS_TABS = ['general', 'preferences', 'netsuite', 'netsuite-data', 'templates'] as const;
+import { ClassificationsSettingsPanel } from '../components/ClassificationsSettingsPanel';
+
+const SETTINGS_TABS = ['general', 'preferences', 'netsuite', 'netsuite-data', 'classifications', 'templates'] as const;
 export type SettingsTabId = (typeof SETTINGS_TABS)[number];
 
 function isSettingsTab(s: string | null): s is SettingsTabId {
@@ -173,6 +175,10 @@ export function SettingsPage() {
             <Database className="h-4 w-4 shrink-0" />
             NetSuite data
           </TabsTrigger>
+          <TabsTrigger value="classifications" className="gap-2 px-4 py-2 data-[state=active]:shadow-sm">
+            <Layers className="h-4 w-4 shrink-0" />
+            Classifications
+          </TabsTrigger>
           <TabsTrigger value="templates" className="gap-2 px-4 py-2 data-[state=active]:shadow-sm">
             <FileSpreadsheet className="h-4 w-4 shrink-0" />
             Document templates
@@ -233,6 +239,14 @@ export function SettingsPage() {
               isOrgAdmin={isOrgAdmin}
               canFetchNetSuiteCatalog={canFetchNetSuiteCatalog(user.role)}
             />
+          ) : (
+            <AdminOnlyNotice />
+          )}
+        </TabsContent>
+
+        <TabsContent value="classifications" className="space-y-4 overflow-visible focus-visible:ring-0 focus-visible:ring-offset-0">
+          {isOrgUser ? (
+            <ClassificationsSettingsPanel isOrgAdmin={isOrgAdmin} />
           ) : (
             <AdminOnlyNotice />
           )}

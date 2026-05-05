@@ -23,7 +23,7 @@ import { backToState } from '@/modules/common/utils/navigationState';
 import { ApiError } from '@/services/http/client';
 import type { UploadValidationResult } from '../types';
 
-type FileState = { pl: File | null; ci: File | null; coo: File | null };
+type FileState = { pl: File | null; ci: File | null; coo: File | null; asn: File | null };
 
 function parseMismatchDetailsFromError(e: unknown): { mismatches?: unknown } | undefined {
   if (!(e instanceof ApiError) || !e.body) return undefined;
@@ -41,7 +41,7 @@ export function UploadPage() {
   const listBack = useMemo(() => backToState(location.pathname, location.search), [location.pathname, location.search]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [files, setFiles] = useState<FileState>({ pl: null, ci: null, coo: null });
+  const [files, setFiles] = useState<FileState>({ pl: null, ci: null, coo: null, asn: null });
   const [uploadProgress, setUploadProgress] = useState(false);
   const [validateProgress, setValidateProgress] = useState(false);
   const [templateLoading, setTemplateLoading] = useState<'pl' | 'ci' | null>(null);
@@ -80,10 +80,11 @@ export function UploadPage() {
 
   const validateMutation = useMutation({
     mutationFn: async () => {
-      const list: { file: File; type: 'pl' | 'ci' | 'coo' }[] = [];
+      const list: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[] = [];
       if (files.pl) list.push({ file: files.pl, type: 'pl' });
       if (files.ci) list.push({ file: files.ci, type: 'ci' });
       if (files.coo) list.push({ file: files.coo, type: 'coo' });
+      if (files.asn) list.push({ file: files.asn, type: 'asn' });
       if (list.length === 0) throw new Error('Select at least one file');
       return validateUploadDocuments(poId!, list);
     },
@@ -100,10 +101,11 @@ export function UploadPage() {
 
   const uploadMutation = useMutation({
     mutationFn: () => {
-      const list: { file: File; type: 'pl' | 'ci' | 'coo' }[] = [];
+      const list: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[] = [];
       if (files.pl) list.push({ file: files.pl, type: 'pl' });
       if (files.ci) list.push({ file: files.ci, type: 'ci' });
       if (files.coo) list.push({ file: files.coo, type: 'coo' });
+      if (files.asn) list.push({ file: files.asn, type: 'asn' });
       if (list.length === 0) return Promise.reject(new Error('Select at least one file'));
       return uploadDocuments(poId!, list);
     },
@@ -127,7 +129,7 @@ export function UploadPage() {
           description = [description, ns.message].filter(Boolean).join(' ');
         }
         toast({ title: 'Upload successful', description });
-        setFiles({ pl: null, ci: null, coo: null });
+        setFiles({ pl: null, ci: null, coo: null, asn: null });
         setValidationResult(null);
         setSubmitErrorDetails(null);
       } else {
@@ -151,7 +153,7 @@ export function UploadPage() {
     },
   });
 
-  const hasAny = files.pl || files.ci || files.coo;
+  const hasAny = files.pl || files.ci || files.coo || files.asn;
 
   const canSubmit = useMemo(() => {
     if (!validationResult) return false;
@@ -256,7 +258,7 @@ export function UploadPage() {
       <Card>
         <CardHeader>
           <CardTitle>Templates</CardTitle>
-          <CardDescription>Packing list and commercial invoice templates.</CardDescription>
+          <CardDescription>Packing list, commercial invoice, ASN (CSV); certificate of origin (PDF).</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
           <Button
@@ -304,7 +306,7 @@ export function UploadPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {(['pl', 'ci', 'coo'] as const).map((type) => (
+          {(['pl', 'ci', 'coo', 'asn'] as const).map((type) => (
             <UploadDropzone
               key={type}
               type={type as UploadFileType}
@@ -314,13 +316,19 @@ export function UploadPage() {
             />
           ))}
 
-          {po.uploadRules && (
+          {po.uploadRules ? (
             <p className="text-xs text-muted-foreground">
-              Buyer tolerance: packing list ±{po.uploadRules.packingListQtyTolerancePct}%, commercial invoice ±
+              Buyer tolerance applies to <strong>packing list</strong> and <strong>commercial invoice</strong> CSV line quantities only.
+              <strong> ASN</strong> is filed as CSV without quantity validation here. Tolerance: packing list ±
+              {po.uploadRules.packingListQtyTolerancePct}%, commercial invoice ±
               {po.uploadRules.commercialInvoiceQtyTolerancePct}%.
               {blockSubmit
-                ? ' Quantities outside this range must be corrected before submit.'
-                : ' You may still submit after Continue when warnings appear.'}
+                ? ' Quantities outside this range must be corrected on PL/CI before submit.'
+                : ' You may still submit after Continue when PL/CI warnings appear.'}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              <strong>ASN</strong> (advance shipping notice) uploads as CSV only; quantity checks apply to packing list and commercial invoice when configured by your buyer.
             </p>
           )}
 
@@ -328,7 +336,7 @@ export function UploadPage() {
             <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
               {validationResult?.success && (
                 <p className="font-medium text-emerald-800 dark:text-emerald-200">
-                  Quantity checks passed for the selected files. You can submit when ready.
+                  Validation passed for the selected files. You can submit when ready.
                 </p>
               )}
               {validationResult && !validationResult.success && (
@@ -370,7 +378,7 @@ export function UploadPage() {
                       {validationResult!.mismatches!.map((m, i) => (
                         <tr key={`${m.lineNo}-${i}`} className="border-b border-border/60">
                           <td className="py-1 pr-2 font-mono text-[10px] text-muted-foreground">
-                            {m.docType === 'ci' ? 'CI' : m.docType === 'pl' ? 'PL' : '—'}
+                            {m.docType === 'ci' ? 'CI' : m.docType === 'pl' ? 'PL' : m.docType === 'asn' ? 'ASN' : '—'}
                           </td>
                           <td className="py-1 pr-2">{m.lineNo}</td>
                           <td className="py-1 pr-2">{m.sku ?? '—'}</td>

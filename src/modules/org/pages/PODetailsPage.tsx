@@ -48,7 +48,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { OrgPoUploadSheet } from '../components/OrgPoUploadSheet';
 
-/** NetSuite internal PO id for resetpackinglist — top-level field or header snapshot. */
+/** NetSuite PO internal id (`trans_id`) for resetpackinglist — top-level `netsuiteTransId` or nested header fields. */
 function resolveNetSuitePoTransactionId(po: PODetail): number | null {
   if (po.netsuiteTransId != null && String(po.netsuiteTransId).trim() !== '') {
     const n = Number(po.netsuiteTransId);
@@ -57,7 +57,7 @@ function resolveNetSuitePoTransactionId(po: PODetail): number | null {
   const nf = po.netsuiteFields;
   if (nf && typeof nf === 'object') {
     const o = nf as Record<string, unknown>;
-    for (const k of ['internalid', 'internalId']) {
+    for (const k of ['internalid', 'internalId', 'trans_id', 'tran_id']) {
       const v = o[k];
       if (v != null && String(v).trim() !== '') {
         const n = Number(v);
@@ -68,7 +68,7 @@ function resolveNetSuitePoTransactionId(po: PODetail): number | null {
   const summary = po.summary;
   if (summary && typeof summary === 'object') {
     const o = summary as Record<string, unknown>;
-    for (const k of ['internalid', 'internalId']) {
+    for (const k of ['internalid', 'internalId', 'trans_id', 'tran_id']) {
       const v = o[k];
       if (v != null && String(v).trim() !== '') {
         const n = Number(v);
@@ -139,7 +139,7 @@ export function PODetailsPage() {
     if (tid == null || folderNum == null) {
       return { ready: false as const };
     }
-    return { ready: true as const, transactionId: tid, folderId: folderNum };
+    return { ready: true as const, transId: tid, folderId: folderNum };
   }, [po, nsIntegration]);
 
   /** Tooltip + blocked dialog copy */
@@ -151,7 +151,7 @@ export function PODetailsPage() {
     const parts: string[] = [];
     if (!tidOk) {
       parts.push(
-        'No numeric NetSuite internal PO id found on this record (expected netsuiteTransId, trans_id, or internalid on netsuiteFields / summary).'
+        'No numeric NetSuite transaction id (`trans_id`) on this PO. Run NetSuite PO sync so the order gets `externalId` (NetSuite internal id), or ensure `netsuiteFields` / `summary` include `internalid`, `trans_id`, or `tran_id`. Manually created POs stay blocked until linked to NetSuite.'
       );
     }
     if (!folderOk) {
@@ -166,12 +166,12 @@ export function PODetailsPage() {
   const resetPackingMutation = useMutation({
     mutationFn: () => {
       if (!poId || !resetPackingPrereq.ready) {
-        return Promise.reject(new Error('NetSuite purchase order or document folder is not configured.'));
+        return Promise.reject(new Error('NetSuite `trans_id` or document folder is not configured.'));
       }
       return postOrgPOResetPackingList(poId, {
         type: 'resetpackinglist',
-        transactionType: 'purchaseorder',
-        transactionId: resetPackingPrereq.transactionId,
+        trans_id: resetPackingPrereq.transId,
+        tran_id: resetPackingPrereq.transId,
         folderId: resetPackingPrereq.folderId,
       });
     },
@@ -281,9 +281,17 @@ export function PODetailsPage() {
       <PageHeader
         eyebrow="Purchase order"
         title={po.poNumber}
-        description={`Status: ${po.status} · Created ${formatDateTime(po.createdAt)}${
-          po.updatedAt ? ` · Updated ${formatDateTime(po.updatedAt)}` : ''
-        }`}
+        titleAside={
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <span className="inline-flex rounded-full border border-border/80 bg-muted/50 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">
+              {po.status}
+            </span>
+            <div className="flex flex-col gap-0.5 text-xs leading-snug text-muted-foreground tabular-nums sm:text-right">
+              <span>Created {formatDateTime(po.createdAt)}</span>
+              {po.updatedAt ? <span>Updated {formatDateTime(po.updatedAt)}</span> : null}
+            </div>
+          </div>
+        }
       />
 
       <AlertDialog open={resetPackingOpen} onOpenChange={setResetPackingOpen}>
@@ -292,9 +300,10 @@ export function PODetailsPage() {
             <AlertDialogTitle>Reset packing list and commercial invoice quantities?</AlertDialogTitle>
             <AlertDialogDescription>
               This sends{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">resetpackinglist</code> for this NetSuite purchase
-              order so packing list / commercial invoice qty lines clear; the portal can reopen uploads for your vendor based on
-              your policy. Existing submission rows here stay for audit. Not reversible from this app alone.
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">resetpackinglist</code> to NetSuite using this PO&apos;s
+              internal transaction id (<code className="rounded bg-muted px-1 py-0.5 text-[11px]">trans_id</code>) so packing list / commercial invoice qty fields clear;
+              the portal can reopen uploads for your vendor based on your policy. Existing submission rows here stay for audit.
+              Not reversible from this app alone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -329,13 +338,13 @@ export function PODetailsPage() {
                   <>
                     <p>
                       {resetPackingBlockedHint ||
-                        'NetSuite internal PO id and document upload folder must be available before reset can run.'}
+                        'NetSuite trans_id (internal PO id on this record) and the document upload folder must be available before reset can run.'}
                     </p>
                     <p>
                       <Link to={ROUTES.ORG.SETTINGS} className="font-medium text-primary underline underline-offset-2">
                         Open Settings
                       </Link>{' '}
-                      to set the document folder, or sync this PO from NetSuite if the internal id is missing.
+                      to set the document folder, or sync this PO from NetSuite if <code className="rounded bg-muted px-1 py-0.5 text-[11px]">trans_id</code> is missing.
                     </p>
                   </>
                 )}
@@ -380,9 +389,6 @@ export function PODetailsPage() {
             )}
             {po.netsuiteFields && Object.keys(po.netsuiteFields).length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  NetSuite — purchase order header
-                </p>
                 <KeyValueFields data={po.netsuiteFields} dense />
               </div>
             )}

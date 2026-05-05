@@ -328,20 +328,21 @@ export function downloadCITemplate(poId: string) {
   return downloadTemplate(poId, 'ci');
 }
 
-const typeMap = { pl: 'PL', ci: 'CI', coo: 'COO' } as const;
+const typeMap = { pl: 'PL', ci: 'CI', coo: 'COO', asn: 'ASN' } as const;
 
-function docLabel(type: 'pl' | 'ci' | 'coo'): string {
+function docLabel(type: 'pl' | 'ci' | 'coo' | 'asn'): string {
   if (type === 'pl') return 'Packing list';
   if (type === 'ci') return 'Commercial invoice';
+  if (type === 'asn') return 'Advance shipping notice (ASN)';
   return 'COO';
 }
 
 type UploadApiRow = UploadValidationResult & { debug?: Record<string, unknown> };
 
-/** POST /vendor/pos/:poId/uploads?type=PL|CI|COO — one file per request. Use validateOnly to check qty without persisting. */
+/** POST /vendor/pos/:poId/uploads?type=PL|CI|COO|ASN — one file per request. Use validateOnly to check qty without persisting. */
 export async function uploadDocuments(
   poId: string,
-  files: { file: File; type: 'pl' | 'ci' | 'coo' }[],
+  files: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[],
   options?: { validateOnly?: boolean; validationDebug?: boolean }
 ): Promise<UploadValidationResult> {
   const validateOnly = options?.validateOnly === true;
@@ -373,7 +374,8 @@ export async function uploadDocuments(
       }
       if (r.warnings?.length) merged.warnings = [...(merged.warnings ?? []), ...r.warnings];
       if (r.mismatches?.length) {
-        const docType: 'pl' | 'ci' | undefined = type === 'pl' ? 'pl' : type === 'ci' ? 'ci' : undefined;
+        const docType: 'pl' | 'ci' | 'asn' | undefined =
+          type === 'pl' ? 'pl' : type === 'ci' ? 'ci' : type === 'asn' ? 'asn' : undefined;
         merged.mismatches = [
           ...(merged.mismatches ?? []),
           ...r.mismatches.map((m) => (docType ? { ...m, docType } : m)),
@@ -408,7 +410,7 @@ export async function uploadDocuments(
 /** Validate selected files against PO qty rules without persisting (same as uploadDocuments with validateOnly). */
 export function validateUploadDocuments(
   poId: string,
-  files: { file: File; type: 'pl' | 'ci' | 'coo' }[],
+  files: { file: File; type: 'pl' | 'ci' | 'coo' | 'asn' }[],
   options?: { validationDebug?: boolean }
 ) {
   return uploadDocuments(poId, files, { validateOnly: true, validationDebug: options?.validationDebug === true });

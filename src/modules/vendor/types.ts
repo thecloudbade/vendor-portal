@@ -81,7 +81,7 @@ export interface QtyMismatchLine {
   tolerancePct?: number;
   deviationPct?: number | null;
   /** Set when merging validate-only results for multiple doc types. */
-  docType?: 'pl' | 'ci';
+  docType?: 'pl' | 'ci' | 'asn';
 }
 
 /** `data.debug` from POST validate-only when `validationDebug=true` (PL: includes `plCsvUpload`). */
@@ -100,5 +100,5 @@ export interface UploadValidationResult {
    * When validate-only ran with `validationDebug`, one entry per doc type validated in the batch.
    * Use `debug.plCsvUpload` for parsed grid + detected rows (PL CSV + active template).
    */
-  debugByDoc?: Partial<Record<'pl' | 'ci' | 'coo', VendorUploadValidationDebug>>;
+  debugByDoc?: Partial<Record<'pl' | 'ci' | 'coo' | 'asn', VendorUploadValidationDebug>>;
 }

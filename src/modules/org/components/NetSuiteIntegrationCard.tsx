@@ -58,6 +58,9 @@ const putSchema = z.object({
   realm: z.string().min(1),
   scriptId: z.string().min(1),
   deployId: z.string().min(1),
+  restletTypeClassification: z.string().optional(),
+  classificationScriptId: z.string().optional(),
+  classificationDeployId: z.string().optional(),
   documentUploadFolderId: z.string().optional(),
   consumerKey: z.string().optional(),
   consumerSecret: z.string().optional(),
@@ -127,6 +130,9 @@ export function NetSuiteIntegrationCard() {
       realm: '',
       scriptId: '',
       deployId: '1',
+      restletTypeClassification: '',
+      classificationScriptId: '',
+      classificationDeployId: '',
       documentUploadFolderId: '',
       consumerKey: '',
       consumerSecret: '',
@@ -142,6 +148,9 @@ export function NetSuiteIntegrationCard() {
       realm: status.realm ?? '',
       scriptId: status.scriptId ?? '',
       deployId: status.deployId ?? '1',
+      restletTypeClassification: status.typeClassification ?? '',
+      classificationScriptId: status.classificationScriptId ?? '',
+      classificationDeployId: status.classificationDeployId ?? '',
       documentUploadFolderId:
         status.documentUploadFolderId != null && Number.isFinite(Number(status.documentUploadFolderId))
           ? String(status.documentUploadFolderId)
@@ -175,6 +184,15 @@ export function NetSuiteIntegrationCard() {
       if (payload.consumerSecret?.trim()) body.consumerSecret = payload.consumerSecret.trim();
       if (payload.tokenId?.trim()) body.tokenId = payload.tokenId.trim();
       if (payload.tokenSecret?.trim()) body.tokenSecret = payload.tokenSecret.trim();
+      const cls = (payload.restletTypeClassification ?? '').trim();
+      if (cls) body.restletTypeClassification = cls;
+      else if (status?.configured) body.restletTypeClassification = null;
+      const cs = (payload.classificationScriptId ?? '').trim();
+      if (cs) body.classificationScriptId = cs;
+      else if (status?.configured) body.classificationScriptId = null;
+      const cd = (payload.classificationDeployId ?? '').trim();
+      if (cd) body.classificationDeployId = cd;
+      else if (status?.configured) body.classificationDeployId = null;
       const firstTime = !status?.configured;
       if (firstTime) {
         if (!body.consumerKey || !body.consumerSecret || !body.tokenId || !body.tokenSecret) {
@@ -423,6 +441,47 @@ export function NetSuiteIntegrationCard() {
             <div>
               <Label htmlFor="ns-deploy">Deploy ID</Label>
               <Input id="ns-deploy" {...form.register('deployId')} className="mt-1" />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="ns-classification-type">Classification lists — RESTlet type=</Label>
+              <Input
+                id="ns-classification-type"
+                {...form.register('restletTypeClassification')}
+                className="mt-1 font-mono text-sm"
+                placeholder="e.g. classifications"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                SuiteScript branch for GETs with <code className="rounded bg-muted px-0.5">recordType</code>,{' '}
+                <code className="rounded bg-muted px-0.5">page</code>, <code className="rounded bg-muted px-0.5">limit</code>.
+                Defaults to server <span className="font-mono">classifications</span> when unset.
+              </p>
+            </div>
+            <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="ns-class-script">Classification RESTlet script ID (optional)</Label>
+                <Input
+                  id="ns-class-script"
+                  {...form.register('classificationScriptId')}
+                  className="mt-1 font-mono text-sm"
+                  placeholder="e.g. 7037 — when list sync uses another script than above"
+                />
+              </div>
+              <div>
+                <Label htmlFor="ns-class-deploy">Classification deploy ID (optional)</Label>
+                <Input
+                  id="ns-class-deploy"
+                  {...form.register('classificationDeployId')}
+                  className="mt-1 font-mono text-sm"
+                  placeholder="Default: same as Deploy ID"
+                />
+              </div>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">
+                Record-type catalog (<span className="font-mono">type=recordtypes</span>) still uses Script ID / Deploy above.
+                Classification sync uses these fields when set, so URLs match e.g.{` `}
+                <span className="font-mono whitespace-pre-wrap">
+                  …/restlet.nl?script=7037&amp;deploy=1&amp;type=classifications&amp;recordType=…
+                </span>
+              </p>
             </div>
           </div>
 

@@ -54,6 +54,9 @@ export const ROUTES = {
     NETSUITE_PO_DETAIL: (vendorId: string, netsuitePoId: string) =>
       `/org/netsuite-po/${encodeURIComponent(vendorId)}/${encodeURIComponent(netsuitePoId)}`,
     SETTINGS: '/org/settings',
+    /** Single synced classification list — records table + slide-over detail */
+    CLASSIFICATION_DETAIL: (classificationKey: string) =>
+      `/org/settings/classifications/${encodeURIComponent(classificationKey)}`,
     AUDIT: '/org/audit',
     /** Paginated list of all vendor document submissions (GET /org/uploads). */
     UPLOADS: '/org/uploads',

@@ -70,6 +70,11 @@ const OrgPODetailsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('@/modules/org/pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
+const OrgClassificationDetailPage = lazy(() =>
+  import('@/modules/org/pages/OrgClassificationDetailPage').then((m) => ({
+    default: m.OrgClassificationDetailPage,
+  }))
+);
 const AuditPage = lazy(() =>
   import('@/modules/org/pages/AuditPage').then((m) => ({ default: m.AuditPage }))
 );
@@ -216,6 +221,14 @@ const router = createBrowserRouter(
             { path: 'pos/open', element: <Suspense fallback={<SuspenseFallback />}><OrgPoOpenPage /></Suspense> },
             { path: 'pos', element: <Suspense fallback={<SuspenseFallback />}><OrgPOListPage /></Suspense> },
             { path: 'pos/:poId', element: <Suspense fallback={<SuspenseFallback />}><OrgPODetailsPage /></Suspense> },
+            {
+              path: 'settings/classifications/:classificationKey',
+              element: (
+                <Suspense fallback={<SuspenseFallback />}>
+                  <OrgClassificationDetailPage />
+                </Suspense>
+              ),
+            },
             { path: 'settings', element: <Suspense fallback={<SuspenseFallback />}><SettingsPage /></Suspense> },
             { path: 'audit', element: <Suspense fallback={<SuspenseFallback />}><AuditPage /></Suspense> },
             {

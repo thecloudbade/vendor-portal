@@ -165,7 +165,7 @@ export function UploadHistoryPage() {
         isLoading={isLoading}
         emptyIcon={Package}
         emptyTitle="No uploads in your history"
-        emptyMessage="After you submit packing lists, invoices, or COO documents, they will be listed here with validation status."
+        emptyMessage="After you submit packing lists, invoices, COO, or ASN documents, they will be listed here with validation status."
       />
     </div>
   );

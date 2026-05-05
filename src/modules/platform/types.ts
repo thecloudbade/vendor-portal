@@ -25,6 +25,7 @@ export interface PlatformNetsuiteRestletTypesPayload {
   restletTypePurchaseLineData?: string | null;
   restletTypeRecordTypes?: string | null;
   restletTypeMetadata?: string | null;
+  restletTypeClassification?: string | null;
   restletTypeDocumentUpload?: string | null;
   restletTypeLineUpdate?: string | null;
 }

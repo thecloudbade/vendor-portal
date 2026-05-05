@@ -146,8 +146,10 @@ export interface PODetail {
 /** POST /org/pos/:poId/reset-packing — forwards to NetSuite; org roles (ORG_ADMIN / ORG_USER; server-enforced). */
 export type OrgPOResetPackingListPayload = {
   type: 'resetpackinglist';
-  transactionType: 'purchaseorder';
-  transactionId: number;
+  /** NetSuite purchase-order transaction internal id (RESTlet query/body — same as line-fetch `trans_id`). */
+  trans_id: number;
+  /** Mirror for SuiteScripts that only read `tran_id`. */
+  tran_id: number;
   folderId: number;
 };
 
@@ -266,6 +268,16 @@ export interface NetSuiteIntegrationStatus {
   typeVendors?: string;
   typePurchaseOrders?: string;
   typePurchaseLineData?: string;
+  typeRecordTypes?: string;
+  typeMetadata?: string;
+  /** RESTlet `type` query for classification / reference-list GETs (list key via `recordType`). */
+  typeClassification?: string;
+  /** Optional override: classification sync uses this script id (e.g. 7037) while vendor/PO/recordtypes use `scriptId`. */
+  classificationScriptId?: string | null;
+  classificationDeployId?: string | null;
+  /** Resolved script/deploy used for classification list GET (override or main). */
+  effectiveClassificationScriptId?: string;
+  effectiveClassificationDeployId?: string;
   /** RESTlet `type` query for POST `vendorfilesupload` (`files[]` with PDF base64). */
   restletTypeDocumentUpload?: string;
   /** RESTlet `type` query for POST `packinglistupdate` (`packingLines` / `commercialLines`). Empty → API default `packinglistupdate`. */
@@ -307,6 +319,11 @@ export interface NetSuiteIntegrationPutPayload {
   deployId: string;
   /** NetSuite file cabinet folder internal id; send `null` to clear. */
   documentUploadFolderId?: number | null;
+  /** Same string as SuiteScript `type` for classification / reference-list GETs. Send `null` to clear org override. */
+  restletTypeClassification?: string | null;
+  /** Same TBA as main integration; different SuiteScript script/deploy when list GET uses another RESTlet than main. */
+  classificationScriptId?: string | null;
+  classificationDeployId?: string | null;
   consumerKey?: string;
   consumerSecret?: string;
   tokenId?: string;
@@ -343,6 +360,8 @@ export interface NetSuiteFieldConfigPutPayload {
 export interface NetSuiteRecordTypeOption {
   id: string;
   name?: string;
+  /** NetSuite catalog internal id (list row) when provided by RESTlet */
+  internalId?: string;
   /** NetSuite script / type id when API provides it */
   scriptId?: string;
 }
@@ -411,6 +430,57 @@ export interface NetSuiteRecordCacheSyncResult {
   fetchedAt?: string | null;
   urlRedacted?: string;
   errorSnippet?: string | null;
+}
+
+/** NetSuite reference-data sync (RESTlet `type=classification` + `classification=`). */
+export interface NetSuiteClassificationListItem {
+  id: string;
+  classificationKey: string;
+  label: string;
+  fetchStatus: string | null;
+  fetchedAt: string | null;
+  errorSnippet: string | null;
+  netsuiteHttpStatus: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NetSuiteClassificationDetail {
+  id: string;
+  classificationKey: string;
+  label: string;
+  fetchStatus: string | null;
+  netsuiteHttpStatus: number | null;
+  errorSnippet: string | null;
+  fetchedAt: string | null;
+  lastQuery: Record<string, unknown> | null;
+  payload: unknown;
+  /** Org-scoped rows from last successful sync (df-vendor) */
+  records?: NetSuiteClassificationStoredRow[];
+  storedRecordCount?: number;
+  updatedAt?: string;
+}
+
+export interface NetSuiteClassificationStoredRow {
+  id: string;
+  orgId: string;
+  classificationKey: string;
+  netsuiteRecordId: string;
+  row: unknown;
+  updatedAt?: string;
+}
+
+export interface NetSuiteClassificationSyncResult {
+  classificationKey: string;
+  success: boolean;
+  netsuiteHttpStatus?: number;
+  urlRedacted?: string | null;
+  fetchStatus?: string;
+  errorSnippet?: string | null;
+  mappedQuery?: Record<string, unknown>;
+  recordCount?: number | null;
+  /** Rows persisted under org after successful sync (df-vendor) */
+  storedRowCount?: number;
 }
 
 export interface NetSuitePOSyncResult {
